@@ -21,7 +21,7 @@
   let settingsRefreshTimer = 0;
   let deferredInstallPrompt = null;
   const DEBUG_STORAGE_KEY = "beixiaoguo.cf.debug-log";
-  const APP_VERSION = "0.1.6";
+  const APP_VERSION = "0.1.10";
   const MAX_DEBUG_ENTRIES = 180;
   let debugEntries = loadDebugEntries();
   let serverDebugEntries = [];
@@ -990,6 +990,25 @@
     button.addEventListener("contextmenu", (event) => event.preventDefault());
   }
 
+  function mediaElementDiagnostics(video) {
+    let bufferedEnd = 0;
+    try {
+      if (video.buffered && video.buffered.length) bufferedEnd = video.buffered.end(video.buffered.length - 1);
+    } catch (_) {}
+    const n = (value) => Number.isFinite(value) ? Math.round(value * 100) / 100 : null;
+    return {
+      currentTime: n(video.currentTime),
+      duration: n(video.duration),
+      bufferedEnd: n(bufferedEnd),
+      readyState: video.readyState,
+      networkState: video.networkState,
+      paused: !!video.paused,
+      ended: !!video.ended,
+      errorCode: video.error ? video.error.code : 0,
+      errorMessage: video.error && video.error.message ? String(video.error.message).slice(0, 180) : ""
+    };
+  }
+
   function syncPlaybackStatus(phase) {
     const video = $("#web-player");
     const status = $("#playback-status");
@@ -1649,12 +1668,17 @@
         startPlayback(state.playback.index, $("#player-quality").value, position);
       });
       const video = $("#web-player");
+      video.addEventListener("loadedmetadata", () => debugWrite("info","player.media.metadata",mediaElementDiagnostics(video)));
+      video.addEventListener("waiting", () => debugWrite("warn","player.media.waiting",mediaElementDiagnostics(video)));
+      video.addEventListener("stalled", () => debugWrite("warn","player.media.stalled",mediaElementDiagnostics(video)));
       video.addEventListener("playing", () => {
+        debugWrite("info","player.media.playing",mediaElementDiagnostics(video));
         setPlaybackActivity(true);
         syncPlaybackStatus("正在播放");
         setMediaSessionPlaybackState("playing");
       });
       video.addEventListener("pause", () => {
+        if (!video.ended && String(video.currentSrc || "").includes("/api/v1/media/")) debugWrite("info","player.media.pause",mediaElementDiagnostics(video));
         endTemporaryBoost();
         setPlaybackActivity(false);
         syncPlaybackStatus();
@@ -1839,6 +1863,7 @@
       }
       video.onerror = () => {
         const code = video.error ? video.error.code : 0;
+        debugWrite("error","player.media.error",mediaElementDiagnostics(video));
         status.textContent = "浏览器无法播放此视频（媒体错误 " + code + "）。可尝试切换画质或使用其他浏览器。";
       };
       video.src = info.src;

@@ -162,3 +162,10 @@ npx wrangler secret put BXG_MEDIA_SECRET --config wrangler.worker.jsonc
 Wrangler 命令会交互式要求输入 Secret；Worker 的 `secret put` 会发布一个新版本。不要把密钥写入普通 `vars`、Wrangler 配置或源代码。
 
 如果 Pages 和 Worker **都**显示缺失提示，请分别检查两个部署的设置，而不是只在其中一个地方添加。缺少 Secret 时，未受保护的直接视频仍可播放，受保护分集返回 `MEDIA_SECRET_REQUIRED`。当前支持渐进式 MP4 CENC AES-CTR；HLS/DASH 和其他 DRM 封装仍不支持。
+
+
+## 播放开始后约一秒停住时如何定位
+
+使用 0.1.10 或更新版本后，打开网页右上角 DEBUG，重新播放一次，等待停住后再复制完整诊断包。新版本会把浏览器原生视频的媒体代理请求关联回同一匿名会话，并记录 `media.cenc.stream.failed`、`media.cenc.stream.truncated`、`player.media.stalled` 和 `player.media.error` 等事件。请保留事件名、HTTP 状态、错误码和时间范围即可，不要单独分享完整的 `/api/v1/media/<token>` 播放 URL，因为它是短时播放凭据。
+
+当前 Pages 的 Git 构建日志应显示仓库 `xiaobei206/beixiaoguo-CF` 的最新 `main` 提交；如果部署仍指向另一个仓库或旧提交，更新此仓库不会自动更新该 Pages 项目。

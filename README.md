@@ -2,7 +2,7 @@
 
 贝小果的 Cloudflare 轻量化版本。静态网页可部署在 Cloudflare Pages 或 Workers Static Assets，匿名片库请求由边缘函数按需处理，不需要自管 VPS 或数据库。
 
-当前开发版本：0.1.9
+当前开发版本：0.1.10
 
 ## 开发原则
 
@@ -51,6 +51,13 @@
 
 - `MEDIA_SECRET_REQUIRED` 根据实际处理请求的运行时，分别提示 Cloudflare Pages 项目或 Cloudflare Worker 的配置入口。
 - 文档列出 Pages 与 Workers 各自的 Dashboard 和 Wrangler 设置方法，并强调各部署环境需要分别配置 Secret。
+
+## 0.1.10：定位播放约一秒后停播
+
+- 将加密媒体会话与发起播放的匿名诊断会话关联起来，让浏览器原生视频请求的 Range／解密日志出现在同一 DEBUG 诊断包里。
+- 增加 CENC 流式输出中途截断、解密失败的服务端事件；前端新增浏览器的 metadata、playing、waiting、stalled、pause、error 状态记录。
+- 将 DEBUG 显示版本统一到 0.1.10，避免继续显示 0.1.6 的旧诊断版本。
+- 这些改动增强定位能力，不将尚未观测到的实际停播根因提前标记为已修复。
 
 ## 文档
 

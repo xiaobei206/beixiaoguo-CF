@@ -9,7 +9,7 @@
 
 ## 当前版本
 
-**0.1.9 — 2026-11-27**
+**0.1.10 — 2026-11-27**
 
 - 已迁移原版 UI/PWA 资源。
 - 已接入 openhongguo Node.js/WASM SDK；0.1.2 采用预编译 `WebAssembly.Module`。CI 可验证 Pages 和 Workers 本地运行时 SDK 初始化；运行时烟雾测试不代表真实上游接口、受保护视频流或电视接力已验收。
@@ -52,3 +52,11 @@
 - `MEDIA_SECRET_REQUIRED` 错误按 Pages Functions／Workers 运行时显示对应控制台路径，避免 Pages 环境仍被提示去找“Worker Secrets”。
 - 补齐 Pages `wrangler pages secret put` 与 Workers `wrangler secret put` 两条命令。
 - Pages Production／Preview 和独立 Worker 的 Secret 分别配置；代码不会自动同步账号中的 Secret。
+
+
+## 0.1.10：媒体停播诊断
+
+- 将加密媒体会话里的诊断会话 ID 随令牌保存，解封后把原生 `<video>` 的媒体代理请求日志并回发起播放的 DEBUG 会话。
+- 对流式输出中途失败／上游短读新增服务端诊断事件；浏览器侧记录 metadata、playing、waiting、stalled、pause 和 media error 状态。
+- `APP_VERSION` 与实际版本统一，避免诊断包错误显示 0.1.6。
+- 仍需部署后重新播放一次取得实际 Range／解密失败原因；本次不宣称已经验证真实上游播放恢复。

@@ -1,5 +1,15 @@
 # 贝小果 Cloudflare 开发日志
 
+## 0.1.10 — 2026-11-27
+
+### 增强媒体停播诊断
+- 用户的 Firefox 诊断包显示播放解析返回 200，服务端成功创建 CENC 加密媒体会话，但 DEBUG 中没有实际媒体 Range／解密事件。原因是浏览器原生 `<video>` 请求不能附带应用 API 的 `X-BXG-Session`；服务端因此把媒体代理错误记进临时会话，原 DEBUG 包无法看到。
+- 在 AES-GCM 加密媒体令牌中附带经过校验的匿名诊断会话 ID；媒体请求解封令牌后恢复该 ID，使 Range、布局解析、首区块解密和流式中途失败日志进入同一 DEBUG 包。
+- 增加 `media.cenc.stream.failed` 和 `media.cenc.stream.truncated` 事件，捕捉响应已经开始后才发生的解密异常／上游短读。
+- 前端 DEBUG 增加浏览器视频 metadata、playing、waiting、stalled、pause、error 状态，记录当前时间、缓冲端点、readyState/networkState 与媒体错误码，不记录播放令牌。
+- 修复 DEBUG 自报版本仍是 0.1.6 的问题，版本和静态缓存统一到 0.1.10。
+- 当前提交补齐的是诊断链路；部署后仍需再播放一次，才能根据新的服务端错误确认实际停播根因。
+
 ## 0.1.9 — 2026-11-27
 
 ### Pages 构建中 SDK 播放测试竞态修复

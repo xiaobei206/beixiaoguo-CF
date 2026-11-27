@@ -34,7 +34,8 @@ export async function openMediaSession(token,secret) {
     const payload=JSON.parse(new TextDecoder().decode(plain));
     if(!payload||payload.v!==1||!Array.isArray(payload.sources)||payload.sources.length<1||payload.sources.length>2||
        typeof payload.key!=="string"||! /^[a-fA-F0-9]{32}$/.test(payload.key)||
-       !Number.isSafeInteger(payload.exp)||typeof payload.episodeId!=="string") throw new Error("invalid media session payload");
+       !Number.isSafeInteger(payload.exp)||typeof payload.episodeId!=="string"||
+       (payload.debugSession!==undefined&&(typeof payload.debugSession!=="string"||! /^[a-zA-Z0-9._:-]{8,128}$/.test(payload.debugSession)))) throw new Error("invalid media session payload");
     return payload;
   } catch (_) { throw new Error("media session token is invalid or cannot be decrypted"); }
 }

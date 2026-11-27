@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { openMediaSession, parseByteRange, parseContentRange, safeMediaSource, sealMediaSession } from "../functions/media-session.js";
 
 const secret = "test-secret-0123456789abcdef0123456789";
-const payload = { v:1, sources:["https://cdn.example.com/v/episode.mp4?signature=not-for-the-browser"], key:"00112233445566778899aabbccddeeff", exp:Date.now()+60000, episodeId:"episode-test" };
+const payload = { v:1, sources:["https://cdn.example.com/v/episode.mp4?signature=not-for-the-browser"], key:"00112233445566778899aabbccddeeff", exp:Date.now()+60000, episodeId:"episode-test", debugSession:"bxg-web-test-session-12345678" };
 const token = await sealMediaSession(payload,secret);
 assert.ok(token.length>40);
 assert.equal(token.includes(payload.key),false);

@@ -3,7 +3,7 @@ import { createClient, SearchFilter } from "openhongguo";
 import { ensureCencRuntime } from "../../cenc-runtime.js";
 import { openMediaSession, parseByteRange, parseContentRange, safeMediaSource, sealMediaSession } from "../../media-session.js";
 
-const VERSION = "0.1.9";
+const VERSION = "0.1.10";
 const MAX_CLIENTS = 128;
 const MAX_PROFILES = 256;
 const clients = new Map();
@@ -418,7 +418,7 @@ async function mediaFileSize(token,session){
   if(bytes.byteLength!==1||total<=0)throw new Error("unable to determine media file size");
   rememberMapValue(mediaMetadataCache,token,{total,exp:session.exp},64);return total;
 }
-function decryptedMediaStream(reader,token,start,expectedLength,cenc,firstChunk){
+function decryptedMediaStream(reader,token,start,expectedLength,cenc,firstChunk,debugSession,episodeId,trace){
   let position=start,remaining=expectedLength,initial=firstChunk;
   return new ReadableStream({
     async pull(controller){
@@ -428,7 +428,7 @@ function decryptedMediaStream(reader,token,start,expectedLength,cenc,firstChunk)
         else{
           if(remaining===0){controller.close();return;}
           const result=await reader.read();
-          if(result.done){if(remaining!==0)controller.error(new Error("upstream ended before Range completion"));else controller.close();return;}
+          if(result.done){if(remaining!==0){const error=new Error("upstream ended before Range completion");debugRecord(debugSession,"error","media.cenc.stream.truncated",{episodeId,offset:position,remainingBytes:remaining,message:error.message},trace);controller.error(error);}else controller.close();return;}
           if(!result.value?.byteLength)return;
           chunk=result.value instanceof Uint8Array?result.value:new Uint8Array(result.value);
         }
@@ -437,7 +437,7 @@ function decryptedMediaStream(reader,token,start,expectedLength,cenc,firstChunk)
         if(!alreadyDecrypted&&cenc.decrypt(token,position,chunk)!==true)throw new Error("CENC layout unavailable in this edge isolate");
         position+=chunk.byteLength;remaining-=chunk.byteLength;controller.enqueue(chunk);
         if(remaining===0){controller.close();void reader.cancel().catch(()=>{});}
-      }catch(error){controller.error(error);}
+      }catch(error){debugRecord(debugSession,"error","media.cenc.stream.failed",{episodeId,offset:position,remainingBytes:remaining,message:sanitizeDebugMessage(error?.message||error)},trace);controller.error(error);}
     },
     cancel(reason){return reader.cancel(reason);}
   });
@@ -456,7 +456,7 @@ async function proxyProtectedMedia(token,request,env,debugSession,trace,runtimeN
   const secret=env?.BXG_MEDIA_SECRET;
   if(typeof secret!=="string"||secret.length<32)return errorResponse(503,"MEDIA_SECRET_REQUIRED",mediaSecretSetupMessage(runtimeName));
   let media;
-  try{media=await openMediaSession(token,secret);if(media.exp<=Date.now())return errorResponse(410,"MEDIA_SESSION_EXPIRED","播放会话已过期，请重新打开本集。");media.sources=media.sources.map(safeMediaSource);}
+  try{media=await openMediaSession(token,secret);if(typeof media.debugSession==="string"&&/^[a-zA-Z0-9._:-]{8,128}$/.test(media.debugSession))debugSession=media.debugSession;if(media.exp<=Date.now())return errorResponse(410,"MEDIA_SESSION_EXPIRED","播放会话已过期，请重新打开本集。");media.sources=media.sources.map(safeMediaSource);}
   catch(error){debugRecord(debugSession,"warn","media.session.rejected",{message:sanitizeDebugMessage(error?.message||error)},trace);return errorResponse(404,"MEDIA_SESSION_INVALID","播放会话无效或无法解密，请重新取得播放地址。");}
   let total;
   try{total=await mediaFileSize(token,media);}
@@ -478,7 +478,7 @@ async function proxyProtectedMedia(token,request,env,debugSession,trace,runtimeN
   try{const first=await reader.read();if(first.done||!first.value?.byteLength)throw new Error("upstream media range body is empty");firstChunk=first.value instanceof Uint8Array?first.value:new Uint8Array(first.value);if(firstChunk.byteLength>length)firstChunk=firstChunk.subarray(0,length);if(cenc.decrypt(token,range.start,firstChunk)!==true)throw new Error("CENC decrypt initialization failed");}
   catch(error){try{await reader.cancel();}catch(_){}debugRecord(debugSession,"error","media.cenc.first_chunk.failed",{episodeId:media.episodeId,message:sanitizeDebugMessage(error?.message||error)},trace);return errorResponse(502,"CENC_DECRYPT_FAILED","无法解密视频的首个媒体区块。");}
   debugRecord(debugSession,"debug","media.cenc.range",{episodeId:media.episodeId,start:range.start,end:range.end,totalBytes:total},trace);
-  return new Response(decryptedMediaStream(reader,token,range.start,length,cenc,firstChunk),{status,headers});
+  return new Response(decryptedMediaStream(reader,token,range.start,length,cenc,firstChunk,debugSession,media.episodeId,trace),{status,headers});
 }
 
 function mapSearchType(value) {
@@ -700,7 +700,7 @@ export async function onRequest(context) {
         const expiresAt=Math.min(now+MEDIA_SESSION_LIFETIME_MS,upstreamExpiry);
         if(expiresAt<=now+10000)return sendError(502,"PLAYBACK_EXPIRED","播放地址即将过期，请重新打开本集。");
         let mediaToken;
-        try { mediaToken=await sealMediaSession({v:1,sources:safeSources,key,exp:expiresAt,episodeId:parts[1]},secret); }
+        try { mediaToken=await sealMediaSession({v:1,sources:safeSources,key,exp:expiresAt,episodeId:parts[1],debugSession:session},secret); }
         catch (_) { return sendError(503,"MEDIA_SESSION_SEAL_FAILED","无法创建安全的受保护播放会话。"); }
         data.src="/api/v1/media/"+mediaToken;
         data.expires_at=Math.floor(expiresAt/1000);
