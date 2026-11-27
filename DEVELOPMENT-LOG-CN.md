@@ -1,5 +1,13 @@
 # 贝小果 Cloudflare 开发日志
 
+## 0.1.14 — 2026-11-27
+
+### 修复受保护播放 Secret 诊断遗漏
+- 用户真实请求命中 `/api/v1/play/:episodeId` 并返回 `MEDIA_SECRET_REQUIRED`；检查发现 0.1.13 只有预热和媒体流分支记录 `secretBound`／`secretLengthValid`，直接播放分支缺少事件。
+- 为直接播放分支补上 `media.secret.missing`，仅记录当前 Worker 运行时、Host、Secret 是否为字符串、长度是否达到 32，不记录密钥内容。
+- 需要依据 0.1.14 的新 DEBUG 结果判断是否重建 Secret，不要求用户先删除现有配置。
+
+
 ## 0.1.13 — 2026-11-27
 
 ### 浏览器自选 Cloudflare 入口 IP

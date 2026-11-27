@@ -2,7 +2,7 @@
 
 贝小果的 Cloudflare 轻量化版本。静态网页可部署在 Cloudflare Pages 或 Workers Static Assets，匿名片库请求由边缘函数按需处理，不需要自管 VPS 或数据库。
 
-当前开发版本：0.1.13
+当前开发版本：0.1.14
 
 ## 开发原则
 
@@ -51,6 +51,11 @@
 
 - `MEDIA_SECRET_REQUIRED` 根据实际处理请求的运行时，分别提示 Cloudflare Pages 项目或 Cloudflare Worker 的配置入口。
 - 文档列出 Pages 与 Workers 各自的 Dashboard 和 Wrangler 设置方法，并强调各部署环境需要分别配置 Secret。
+
+## 0.1.14：修复受保护播放 Secret 诊断
+- 补齐直接播放 `/api/v1/play/:episodeId` 路径的 `media.secret.missing` 诊断事件；之前该分支返回 503 时没有输出 `secretBound`／`secretLengthValid`，无法判断是变量未绑定还是值长度不足。
+- 新诊断只记录运行时、当前主机、是否读取到字符串以及长度是否达标，不记录 Secret 值。
+- 不自动修改、删除或重建现有 Secret；根据实际诊断结果再处理部署环境或 Secret 绑定。
 
 ## 0.1.13：浏览器自选 CF 入口 IP（需自定义域名）
 - 新增浏览器本地线路管理器：用户自行添加 IPv4／IPv6，端口固定 443；线路列表只保存在当前浏览器。

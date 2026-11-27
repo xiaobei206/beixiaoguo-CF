@@ -3,7 +3,7 @@ import { createClient, SearchFilter } from "openhongguo";
 import { ensureCencRuntime } from "../../cenc-runtime.js";
 import { openMediaSession, parseByteRange, parseContentRange, safeMediaSource, sealMediaSession } from "../../media-session.js";
 
-const VERSION = "0.1.13";
+const VERSION = "0.1.14";
 const MAX_CLIENTS = 128;
 const MAX_PROFILES = 256;
 const clients = new Map();
@@ -853,7 +853,15 @@ export async function onRequest(context) {
         const key = result?.contentKey?.key;
         if (typeof key !== "string" || !/^[a-fA-F0-9]{32}$/.test(key)) return sendError(502,"CENC_KEY_UNAVAILABLE","SDK 未能为此受保护分集派生有效的 CENC 内容密钥。");
         const secret = context.env?.BXG_MEDIA_SECRET;
-        if (typeof secret !== "string" || secret.length < 32) return sendError(503,"MEDIA_SECRET_REQUIRED",mediaSecretSetupMessage(runtimeName));
+        if (typeof secret !== "string" || secret.length < 32) {
+          debugRecord(session, "error", "media.secret.missing", {
+            runtime:runtimeName,
+            host:url.hostname,
+            secretBound:typeof secret === "string",
+            secretLengthValid:typeof secret === "string" && secret.length >= 32
+          }, requestTrace);
+          return sendError(503,"MEDIA_SECRET_REQUIRED",mediaSecretSetupMessage(runtimeName));
+        }
         let safeSources;
         try { safeSources=[...new Set(sources.map((source)=>safeMediaSource(source)))].slice(0,2); }
         catch (_) { return sendError(502,"MEDIA_SOURCE_REJECTED","上游返回的视频地址不符合安全要求。"); }
