@@ -2,7 +2,7 @@
 
 贝小果的 Cloudflare 轻量化版本。静态网页可部署在 Cloudflare Pages 或 Workers Static Assets，匿名片库请求由边缘函数按需处理，不需要自管 VPS 或数据库。
 
-当前开发版本：0.1.11
+当前开发版本：0.1.12
 
 ## 开发原则
 
@@ -51,6 +51,14 @@
 
 - `MEDIA_SECRET_REQUIRED` 根据实际处理请求的运行时，分别提示 Cloudflare Pages 项目或 Cloudflare Worker 的配置入口。
 - 文档列出 Pages 与 Workers 各自的 Dashboard 和 Wrangler 设置方法，并强调各部署环境需要分别配置 Secret。
+
+## 0.1.12：真实 CF 边缘媒体预热
+
+- 0.1.11 的 CF 侧仅提前解析播放地址；0.1.12 改为将后续最多 6 集的受保护 MP4 解密后完整写入 Cloudflare Cache API。
+- 前 3 集先完成边缘缓存，再由浏览器启动 3 个隐藏视频预载；余下 3 集通过 waitUntil 后台填充。
+- Range 请求优先由边缘缓存按字节区间返回，缓存键包含每次播放的加密会话 URL，TTL 不超过会话有效期。
+- 单集超过 32 MiB 时跳过整集边缘预热和公共缓存，避免大文件占用过多缓存；播放仍可回源按需 Range 解密。
+- Worker 部署启用 Workers Cache；Pages Functions 使用 Cache API。缓存未命中时仍回源，不影响正常播放。
 
 ## 0.1.11：双层短剧预读
 
