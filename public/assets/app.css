@@ -419,6 +419,57 @@ body { padding-top:env(safe-area-inset-top); }
 }
 
 
+/* Browser-selected Cloudflare alternative service routes. */
+.route-dialog { width:min(650px,calc(100% - 28px)); max-height:90vh; }
+.route-dialog .detail-content { max-height:90vh; overflow:auto; padding:24px; }
+.route-dialog h2 { margin:4px 0 8px; font-size:22px; }
+.route-domain-note,.route-status {
+  margin:12px 0; padding:10px 12px; border:1px solid var(--line); border-radius:10px;
+  color:#c9c1cc; background:rgba(255,255,255,.035); font-size:12px; line-height:1.65; overflow-wrap:anywhere;
+}
+.route-domain-note.warn,.route-status.warn { border-color:rgba(231,194,138,.3); color:#e7c28a; background:rgba(231,194,138,.06); }
+.route-domain-note.ok,.route-status.ok { border-color:rgba(131,213,174,.3); color:#9ddfbe; background:rgba(131,213,174,.06); }
+.route-current { margin:14px 0 9px; color:var(--muted); font-size:12px; }
+.route-current strong { color:var(--text); }
+.route-list { display:grid; gap:8px; margin:10px 0 18px; }
+.route-option {
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  padding:10px 12px; border:1px solid var(--line); border-radius:11px; background:rgba(255,255,255,.025);
+}
+.route-option.active { border-color:rgba(241,106,138,.55); background:rgba(241,106,138,.07); }
+.route-option label { display:flex; align-items:center; gap:10px; min-width:0; flex:1; cursor:pointer; }
+.route-option input { accent-color:#f16a8a; flex:none; }
+.route-option-copy { display:grid; gap:3px; min-width:0; }
+.route-option-copy strong { color:var(--text); font-size:13px; font-weight:650; }
+.route-option-copy small { color:var(--muted); font-size:11px; overflow-wrap:anywhere; }
+.route-remove {
+  flex:none; padding:5px 9px; border:1px solid rgba(241,106,138,.24); border-radius:8px;
+  color:#efa0b3; background:rgba(241,106,138,.05); cursor:pointer; font-size:11px;
+}
+.route-add-form { display:grid; gap:10px; padding:13px; border:1px solid var(--line); border-radius:12px; background:rgba(255,255,255,.02); }
+.route-add-form h3 { margin:0; font-size:14px; }
+.route-add-fields { display:grid; grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr); gap:10px; }
+.route-add-fields label { display:grid; gap:6px; color:var(--muted); font-size:11px; }
+.route-add-fields input {
+  width:100%; min-width:0; box-sizing:border-box; padding:10px 11px;
+  border:1px solid var(--line); border-radius:9px; color:var(--text); background:#101015;
+  font:inherit; font-size:13px;
+}
+.route-add-fields input:focus { outline:none; border-color:rgba(241,106,138,.65); }
+.route-hint { margin:0; color:var(--muted); font-size:11px; line-height:1.6; }
+.route-add-form .settings-primary,.route-rule-setup .settings-secondary { width:max-content; max-width:100%; }
+.route-rule-setup { margin-top:15px; padding:12px; border:1px solid var(--line); border-radius:10px; color:var(--muted); font-size:11px; line-height:1.7; }
+.route-rule-setup summary { color:var(--text); cursor:pointer; font-size:12px; font-weight:650; }
+.route-rule-setup ol { display:grid; gap:8px; padding-left:20px; }
+.route-rule-setup code { padding:1px 4px; border:1px solid rgba(255,255,255,.1); border-radius:4px; color:#ffe2e9; background:rgba(255,255,255,.04); overflow-wrap:anywhere; }
+.route-rule-setup p { margin:10px 0; }
+@media (max-width:620px) {
+  .route-dialog .detail-content { padding:20px 15px; }
+  .route-add-fields { grid-template-columns:1fr; }
+  .route-add-form .settings-primary,.route-rule-setup .settings-secondary { width:100%; }
+  .route-button { padding:7px 8px; font-size:10px; }
+}
+
 /* In-app DEBUG viewer */
 .debug-button {
   display:inline-flex; align-items:center; gap:7px; padding:8px 11px;
