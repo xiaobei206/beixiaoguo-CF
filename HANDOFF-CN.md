@@ -18,6 +18,7 @@
 - CENC 受保护流、图片预热/持久缓存、电视接力尚未迁移。
 - 主页顶部有“部署教程”入口；Pages / Workers 安装步骤与拖放 ZIP 限制见 [docs/deploy-cloudflare-cn.md](docs/deploy-cloudflare-cn.md)。
 - 0.1.5 在首页直接显示 GitHub → Pages 设置参数、ZIP/文件夹拖放限制、Wrangler 手动部署与 Workers 备用路线。
+- 0.1.5 新增右上角 DEBUG 面板：可复制前后端诊断日志，按浏览器会话隔离服务端记录，并追踪 Go/WASM runtime 与上游请求。
 - 原版 beixiaoguo-web 不受本仓库修改影响。
 
 ## Pages 部署参数
