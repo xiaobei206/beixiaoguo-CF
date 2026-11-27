@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 
 const path = "node_modules/openhongguo/index.js";
-let source = await readFile(path, "utf8");
+let source = (await readFile(path, "utf8")).replace(/\r\n/g, "\n");
 const requireLine = "require(join(here, 'dist', 'wasm_exec.js')); // 定义 globalThis.Go";
 const loadRuntimeLine = "function loadRuntime() {";
 const patchedLoadRuntime = `function loadRuntime() {
