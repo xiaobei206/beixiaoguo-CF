@@ -2,6 +2,12 @@
 
 ## 0.1.9 — 2026-11-27
 
+### Pages 构建中 SDK 播放测试竞态修复
+- Cloudflare Pages 构建日志在运行自有 openhongguo 仓库的 `go test ./...` 时，偶发失败于 `internal/media/TestPlayPipesDecryptedStreamIntoVLC`，错误为 `playback stopped`；这不是 Pages Secret 或 WASM 打包失败。
+- 在 `xiaobei206/openhongguo` 的提交 `ac32ff5f820203f459cee2f5e36387ea27c92ca8` 修正管道播放结束时的退出状态竞态：播放器已读到 EOF、ffmpeg 已退出，但等待协程尚未把退出结果写入通道时，不再立即误判为用户提前停止。
+- 通过本仓库 CI 重新运行构建脚本，以验证它从 openhongguo main 拉取修复后的源码并完成全套 Go 测试、WASM 构建及 Pages／Workers 运行时烟雾测试。
+
+
 ### 修正媒体 Secret 缺失提示与部署文档
 - 用户反馈 Pages 与 Workers 都显示“请先在 Cloudflare Worker Secrets 中配置 BXG_MEDIA_SECRET”。检查确认该提示是代码中的固定文字，且 Pages 与 Worker 本来就是独立部署环境，运行时分别读取各自的 `context.env.BXG_MEDIA_SECRET`。
 - 新增运行时识别：Pages Functions 返回 Pages 项目配置指引；独立 Worker 返回 Worker 配置指引，并提醒 Production／Preview 环境选择及 Secret 不自动共享。
