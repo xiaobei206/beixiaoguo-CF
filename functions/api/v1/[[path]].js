@@ -489,7 +489,7 @@ function mediaSecretSetupMessage(runtimeName) {
 
 async function proxyProtectedMedia(token,request,env,debugSession,trace,runtimeName){
   if(request.method!=="GET"&&request.method!=="HEAD")return errorResponse(405,"MEDIA_METHOD_NOT_ALLOWED","媒体接口只支持 GET 和 HEAD。",{"Allow":"GET, HEAD"});
-  try{const cached=await matchEdgeMediaCache(request);if(cached){debugRecord(debugSession,"info","media.edge-cache.hit",{range:request.headers.get("Range")||"full"},trace);return request.method==="HEAD"?new Response(null,{status:cached.status,headers:cached.headers}):cached;}}catch(error){debugRecord(debugSession,"warn","media.edge-cache.lookup-failed",{message:sanitizeDebugMessage(error?.message||error)},trace);}
+  try{const cached=await matchEdgeMediaCache(request);if(cached){debugRecord(debugSession,"info","media.edge-cache.hit",{range:request.headers.get("Range")||"full"},trace);return request.method==="HEAD"?new Response(null,{status:cached.status,headers:cached.headers}):new Response(cached.body,cached);}}catch(error){debugRecord(debugSession,"warn","media.edge-cache.lookup-failed",{message:sanitizeDebugMessage(error?.message||error)},trace);}
   const secret=env?.BXG_MEDIA_SECRET;
   if(typeof secret!=="string"||secret.length<32)return errorResponse(503,"MEDIA_SECRET_REQUIRED",mediaSecretSetupMessage(runtimeName));
   let media;
