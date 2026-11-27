@@ -22,7 +22,7 @@
 - 0.1.6 对 `*.fqnovelpic.com` 封面启用 HTTPS 白名单图片代理，浏览器同源加载；仍需真实 CDN 请求确认上游未拒绝 Cloudflare 出口。
 - 0.1.11 增加双层短剧预读：CF 侧最多预解析后续 6 集的播放地址／加密会话，浏览器侧最多预载后续 3 集；浏览器实际下载量仍由浏览器策略决定，CF 不会一次性缓存六集完整视频。
 - 0.1.12 增加真实 CF 媒体预热：最多 6 集受保护 MP4 在 CF 侧完整解密缓存（单集 ≤32 MiB）；前 3 集先缓存，后 3 集后台缓存；浏览器仍预载 3 集，Range 请求可命中缓存。
-- 0.1.13 增加浏览器本地自选 CF 反代 IP 管理器，支持 IPv4／IPv6，只填写 IP、固定 443，列表和选择保存在本机。选择时通过一次 `/api/v1/route?alt_ip=...` 查询参数告知 Cloudflare Zone 响应头规则，以动态 Alt-Svc 公告备用入口；不写 Cookie，也不依赖 Pro 专属 Cookie 规则字段；新增 Alt-Used 诊断。真正切换必须绑定自有橙云域名并配置三条 Response Header Transform Rules；workers.dev／pages.dev 默认域名上仅保存 IP，不会切换。
+- 0.1.13 增加浏览器本地自选 CF 反代 IP 管理器，支持 IPv4／IPv6，只填写 IP、固定 443，列表和选择保存在本机。选择时通过一次 `/api/v1/route?alt_ip=...` 同源请求提交 IP，Worker 校验地址后经内部响应头交给 Cloudflare Zone 响应头规则，以动态 Alt-Svc 公告备用入口；随后删除内部头，不写 Cookie，也不依赖 Pro 专属规则字段；新增 Alt-Used 诊断。真正切换必须绑定自有橙云域名并配置四条 Response Header Transform Rules；workers.dev／pages.dev 默认域名上仅保存 IP，不会切换。
 - 0.1.13 对 MEDIA_SECRET_REQUIRED 增加安全运行时诊断 `media.secret.missing`，记录当前运行时以及 Secret 绑定／长度状态，不记录 Secret 值。仍需以实际 Worker 请求 DEBUG 为准，不能据此认定 Cloudflare 生产环境 Secret 已成功读取。
 - 原版 beixiaoguo-web 不受本仓库修改影响。
 
