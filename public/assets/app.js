@@ -21,10 +21,16 @@
   let settingsRefreshTimer = 0;
   let deferredInstallPrompt = null;
   const DEBUG_STORAGE_KEY = "beixiaoguo.cf.debug-log";
-  const APP_VERSION = "0.1.12";
+  const APP_VERSION = "0.1.13";
   const EDGE_PREFETCH_COUNT = 6;
   const BROWSER_PRELOAD_COUNT = 3;
   const MAX_DEBUG_ENTRIES = 180;
+  const ROUTE_LIST_STORAGE_KEY = "beixiaoguo.cf.alt-routes";
+  const ROUTE_ACTIVE_STORAGE_KEY = "beixiaoguo.cf.alt-route-selected";
+  const ROUTE_COOKIE_NAME = "bxg_alt_ip";
+  const MAX_ROUTE_ENTRIES = 24;
+  let routeEntries = loadRouteEntries();
+  let activeRouteId = loadActiveRouteId();
   let debugEntries = loadDebugEntries();
   let serverDebugEntries = [];
   let serverDebugRuntime = null;
@@ -102,6 +108,246 @@
     } catch (_) {
       debugWrite("warn", "image.url.rejected", {reason:"invalid-url"});
       return "";
+    }
+  }
+
+
+  function normalizeRouteIPAddress(raw) {
+    let value = String(raw || "").trim();
+    if (value.startsWith("[") && value.endsWith("]")) value = value.slice(1, -1);
+    if (!value || /[\\s/\\?#@]/.test(value)) return "";
+    if (value.includes(":")) {
+      try {
+        const parsed = new URL("https://[" + value + "]/");
+        const hostname = parsed.hostname;
+        if (!hostname.startsWith("[") || !hostname.endsWith("]")) return "";
+        const normalized = hostname.slice(1, -1).toLowerCase();
+        return normalized.includes("%") ? "" : normalized;
+      } catch (_) { return ""; }
+    }
+    const parts = value.split(".");
+    if (parts.length !== 4 || parts.some((part) => !/^\\d{1,3}$/.test(part) || Number(part) > 255)) return "";
+    return parts.map((part) => String(Number(part))).join(".");
+  }
+
+  function loadRouteEntries() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(ROUTE_LIST_STORAGE_KEY) || "[]");
+      if (!Array.isArray(parsed)) return [];
+      const seen = new Set();
+      return parsed.slice(0, MAX_ROUTE_ENTRIES).map((item, index) => {
+        const ip = normalizeRouteIPAddress(item && item.ip);
+        if (!ip || seen.has(ip)) return null;
+        seen.add(ip);
+        return {
+          id:String(item.id || ("route-" + index)),
+          name:String(item.name || ("自选线路 " + (index + 1))).trim().slice(0, 32) || ("自选线路 " + (index + 1)),
+          ip
+        };
+      }).filter(Boolean);
+    } catch (_) { return []; }
+  }
+
+  function loadActiveRouteId() {
+    try { return localStorage.getItem(ROUTE_ACTIVE_STORAGE_KEY) || "auto"; }
+    catch (_) { return "auto"; }
+  }
+
+  function saveRoutePreferences() {
+    try {
+      localStorage.setItem(ROUTE_LIST_STORAGE_KEY, JSON.stringify(routeEntries));
+      localStorage.setItem(ROUTE_ACTIVE_STORAGE_KEY, activeRouteId);
+    } catch (_) {
+      showToast("浏览器本地存储不可用，线路设置未能保存");
+    }
+  }
+
+  function getActiveRoute() {
+    if (activeRouteId === "auto") return null;
+    return routeEntries.find((item) => item.id === activeRouteId) || null;
+  }
+
+  function routeAuthority(ip) {
+    return String(ip).includes(":") ? "[" + ip + "]" : String(ip);
+  }
+
+  function setRouteCookie(ip) {
+    if (!window.isSecureContext) return false;
+    const authority = ip ? routeAuthority(ip) : "";
+    const cookiePath = "; Path=/; SameSite=Lax; Secure";
+    if (authority) document.cookie = ROUTE_COOKIE_NAME + "=" + authority + cookiePath + "; Max-Age=31536000";
+    else document.cookie = ROUTE_COOKIE_NAME + "=; Path=/; SameSite=Lax; Secure; Max-Age=0";
+    return true;
+  }
+
+  function usesCloudflareManagedHostname() {
+    const host = String(window.location.hostname || "").toLowerCase();
+    return host.endsWith(".workers.dev") || host.endsWith(".pages.dev");
+  }
+
+  function renderRouteStatus(message, kind) {
+    const node = $("#route-status");
+    if (!node) return;
+    node.textContent = message;
+    node.className = "route-status" + (kind ? " " + kind : "");
+  }
+
+  function renderRouteDialog() {
+    const list = $("#route-list");
+    const current = $("#route-current-label");
+    const note = $("#route-domain-note");
+    if (!list || !current || !note) return;
+    const active = getActiveRoute();
+    current.textContent = active ? active.name + " · " + active.ip + ":443" : "默认线路（Cloudflare 自动）";
+    if (usesCloudflareManagedHostname()) {
+      note.textContent = "当前域名是 " + window.location.hostname + "。Cloudflare 的 workers.dev／pages.dev 默认域名不能使用 Zone Response Header Transform Rules；自选 IP 目前只能保存在本机，不能改变浏览器实际接入线路。需要绑定自己控制的橙云域名并配置下方规则。";
+      note.className = "route-domain-note warn";
+    } else {
+      note.textContent = "当前使用自定义域名 " + window.location.hostname + "。还需要在该域名所在 Cloudflare Zone 配置下方两条响应头规则；确认响应包含你选的 Alt-Svc 后，浏览器才会尝试使用备用 IP。";
+      note.className = "route-domain-note";
+    }
+    const autoChecked = activeRouteId === "auto" || !active;
+    let html = '<div class="route-option' + (autoChecked ? " active" : "") + '">' +
+      '<label><input type="radio" name="active-route" value="auto"' + (autoChecked ? " checked" : "") + '>' +
+      '<span class="route-option-copy"><strong>默认线路</strong><small>Cloudflare 自动接入</small></span></label></div>';
+    for (const item of routeEntries) {
+      const selected = !!active && item.id === active.id;
+      html += '<div class="route-option' + (selected ? " active" : "") + '">' +
+        '<label><input type="radio" name="active-route" value="' + escapeHTML(item.id) + '"' + (selected ? " checked" : "") + '>' +
+        '<span class="route-option-copy"><strong>' + escapeHTML(item.name) + '</strong><small>' + escapeHTML(item.ip) + ':443</small></span></label>' +
+        '<button class="route-remove" type="button" data-remove-route="' + escapeHTML(item.id) + '">删除</button></div>';
+    }
+    list.innerHTML = html;
+  }
+
+  async function announceActiveRoute(ip, quiet) {
+    if (!window.isSecureContext) {
+      renderRouteStatus("自选线路需要 HTTPS 安全上下文；当前页面无法设置线路 Cookie。", "warn");
+      return false;
+    }
+    if (usesCloudflareManagedHostname()) {
+      const message = ip
+        ? "已保存 " + ip + "，但当前 workers.dev／pages.dev 域名无法配置动态 Alt-Svc 响应规则，因此网络入口没有切换。绑定自有橙云域名后才能启用。"
+        : "已选择默认线路；当前使用 Cloudflare 默认域名解析和自动接入。";
+      renderRouteStatus(message, ip ? "warn" : "");
+      debugWrite(ip ? "warn" : "info", "network.route.default-domain", {host:window.location.hostname,ip:ip || ""});
+      return false;
+    }
+    try {
+      const response = await fetch("/api/v1/route?refresh=" + Date.now(), {
+        method:"GET", cache:"no-store",
+        headers:{"Accept":"application/json","X-BXG-Session":playbackClientId}
+      });
+      captureEdgeTrace(response);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(payload.error?.message || ("HTTP " + response.status));
+      const altSvc = response.headers.get("Alt-Svc") || "";
+      const altUsed = String(payload.altUsed || "");
+      const authority = ip ? routeAuthority(ip) + ":443" : "";
+      const advertised = !!ip && altSvc.includes(authority);
+      const usedNow = !!ip && altUsed.includes(authority);
+      if (ip && advertised) {
+        const message = usedNow
+          ? "已下发 " + authority + "，本次诊断请求也报告了 Alt-Used，浏览器已通过该备用入口建立连接。"
+          : "Cloudflare 已向浏览器下发 " + authority + "。浏览器会在新连接上尝试使用；当前已建立的连接不会被强制迁移。";
+        renderRouteStatus(message, "ok");
+        debugWrite("info", "network.route.alt-svc.advertised", {ip,authority,altSvc,altUsed});
+      } else if (ip) {
+        renderRouteStatus("IP 已保存在本机，但本次响应没有公告对应的 Alt-Svc。请检查自定义域名是否已配置动态响应头规则；没有该规则时不会真正切换。", "warn");
+        debugWrite("warn", "network.route.alt-svc.missing", {ip,host:window.location.hostname,altSvc,altUsed});
+      } else {
+        renderRouteStatus(altSvc.trim().toLowerCase() === "clear"
+          ? "已清除自选入口，浏览器将回到默认 Cloudflare 线路。"
+          : "已选择默认线路。若此前使用过自选 IP，请确认默认线路规则已返回 Alt-Svc: clear。", "");
+        debugWrite("info", "network.route.default", {altSvc,altUsed});
+      }
+      return advertised || (!ip && altSvc.trim().toLowerCase() === "clear");
+    } catch (error) {
+      const message = "线路选择已保存在本机，但请求 Cloudflare 刷新线路信息失败：" + (error.message || String(error));
+      renderRouteStatus(message, "warn");
+      debugWrite("warn", "network.route.refresh.failed", {ip:ip || "",message:error.message || String(error)});
+      if (!quiet) showToast("线路信息刷新失败，已保留本机设置");
+      return false;
+    }
+  }
+
+  async function selectRoute(id) {
+    if (id !== "auto" && !routeEntries.some((item) => item.id === id)) return;
+    activeRouteId = id;
+    saveRoutePreferences();
+    const active = getActiveRoute();
+    setRouteCookie(active ? active.ip : "");
+    renderRouteDialog();
+    await announceActiveRoute(active ? active.ip : "", false);
+  }
+
+  async function addRouteFromForm(event) {
+    event.preventDefault();
+    const ip = normalizeRouteIPAddress($("#route-ip").value);
+    if (!ip) {
+      showToast("请输入有效的 IPv4 或 IPv6 地址，不要填写端口");
+      $("#route-ip").focus();
+      return;
+    }
+    if (routeEntries.some((item) => item.ip === ip)) {
+      showToast("这条 IP 已经添加过了");
+      return;
+    }
+    if (routeEntries.length >= MAX_ROUTE_ENTRIES) {
+      showToast("最多保存 " + MAX_ROUTE_ENTRIES + " 条自选线路");
+      return;
+    }
+    const name = String($("#route-name").value || "").trim().slice(0, 32) || ("自选线路 " + (routeEntries.length + 1));
+    const id = "route-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7);
+    routeEntries.push({id,name,ip});
+    activeRouteId = id;
+    saveRoutePreferences();
+    $("#route-name").value = "";
+    $("#route-ip").value = "";
+    setRouteCookie(ip);
+    renderRouteDialog();
+    await announceActiveRoute(ip, false);
+  }
+
+  async function removeRoute(id) {
+    routeEntries = routeEntries.filter((item) => item.id !== id);
+    const wasActive = activeRouteId === id;
+    if (wasActive) activeRouteId = "auto";
+    saveRoutePreferences();
+    renderRouteDialog();
+    if (wasActive) {
+      setRouteCookie("");
+      await announceActiveRoute("", false);
+    }
+  }
+
+  async function copyRouteRuleGuide() {
+    const guide = [
+      "Cloudflare → Rules → Transform Rules → Response Header Transform Rules",
+      "规则 1（自选 IP）",
+      '匹配表达式：(http.host eq "YOUR_HOSTNAME" and any(http.request.cookies["bxg_alt_ip"][*]))',
+      "响应头：Alt-Svc；操作：Set dynamic",
+      '值：concat("h2=\\"", http.request.cookies["bxg_alt_ip"][0], ":443\\\"; ma=300")',
+      "",
+      "规则 2（默认线路）",
+      '(http.host eq "YOUR_HOSTNAME" and not any(http.request.cookies["bxg_alt_ip"][*]))',
+      "响应头：Alt-Svc；操作：Set static；值：clear",
+      "",
+      "将 YOUR_HOSTNAME 替换为自定义橙云域名。workers.dev/pages.dev 不能使用 Zone Transform Rules。"
+    ].join("\n");
+    try {
+      await navigator.clipboard.writeText(guide);
+      showToast("两条 Cloudflare 规则说明已复制");
+    } catch (_) {
+      const field = document.createElement("textarea");
+      field.value = guide;
+      field.style.position = "fixed";
+      field.style.opacity = "0";
+      document.body.appendChild(field);
+      field.select();
+      try { document.execCommand("copy"); showToast("两条 Cloudflare 规则说明已复制"); }
+      catch (_) { showToast("复制失败，请展开规则说明手动复制"); }
+      field.remove();
     }
   }
 
@@ -2272,6 +2518,24 @@
     if (document.fullscreenElement) endTemporaryBoost();
   });
   $("#cast-dialog-close").addEventListener("click", () => $("#cast-dialog").close());
+  $("#route-button").addEventListener("click", () => {
+    renderRouteDialog();
+    if (!$("#route-dialog").open) $("#route-dialog").showModal();
+  });
+  $("#route-dialog-close").addEventListener("click", () => $("#route-dialog").close());
+  $("#route-dialog").addEventListener("click", (event) => {
+    if (event.target === $("#route-dialog")) $("#route-dialog").close();
+  });
+  $("#route-list").addEventListener("change", (event) => {
+    const input = event.target;
+    if (input && input.name === "active-route") selectRoute(input.value);
+  });
+  $("#route-list").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-remove-route]");
+    if (button) removeRoute(button.dataset.removeRoute);
+  });
+  $("#route-add-form").addEventListener("submit", addRouteFromForm);
+  $("#route-copy-guide").addEventListener("click", copyRouteRuleGuide);
   $("#settings-button").addEventListener("click", openSettings);
   $("#debug-log-button").addEventListener("click", openDebugPanel);
   $("#debug-dialog-close").addEventListener("click", () => $("#debug-dialog").close());
@@ -2365,5 +2629,14 @@
   });
   window.addEventListener("pagehide", () => setPlaybackActivity(false));
 
-  loadView("discover", false);
+  const savedRoute = getActiveRoute();
+  setRouteCookie(savedRoute ? savedRoute.ip : "");
+  if (savedRoute && !usesCloudflareManagedHostname()) {
+    announceActiveRoute(savedRoute.ip, true).finally(() => loadView("discover", false));
+  } else {
+    if (savedRoute && usesCloudflareManagedHostname()) {
+      renderRouteStatus("自选 IP 已保存在本机；当前默认域名不支持动态 Alt-Svc 规则。", "warn");
+    }
+    loadView("discover", false);
+  }
 })();
