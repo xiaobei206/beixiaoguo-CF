@@ -20,6 +20,12 @@
   let playerControlsTimer = 0;
   let settingsRefreshTimer = 0;
   let deferredInstallPrompt = null;
+  const DEBUG_STORAGE_KEY = "beixiaoguo.cf.debug-log";
+  const APP_VERSION = "0.1.5";
+  const MAX_DEBUG_ENTRIES = 180;
+  let debugEntries = loadDebugEntries();
+  let serverDebugEntries = [];
+  let serverDebugRuntime = null;
   function todayDateKey() {
     const now = new Date();
     return String(now.getFullYear()) + String(now.getMonth() + 1).padStart(2, "0") + String(now.getDate()).padStart(2, "0");
@@ -126,22 +132,189 @@
     state.toastTimer = window.setTimeout(() => el.classList.remove("show"), 2400);
   }
 
+  function loadDebugEntries() {
+    try {
+      const value = JSON.parse(window.localStorage.getItem(DEBUG_STORAGE_KEY) || "[]");
+      return Array.isArray(value) ? value.slice(-MAX_DEBUG_ENTRIES) : [];
+    } catch (_) { return []; }
+  }
+
+  function safeDebugMessage(value) {
+    return String(value == null ? "" : value)
+      .replace(/https?:\\/\\/[^\\s"'<>]+/gi, (raw) => {
+        try { const u = new URL(raw); return u.origin + u.pathname; } catch (_) { return "[URL]"; }
+      })
+      .replace(/(authorization|cookie|set-cookie|token|secret|password|session)(\\s*[:=]\\s*)[^\\s,;]+/gi, "$1$2[REDACTED]")
+      .replace(/([?&](?:token|sign|signature|device_id|session_id|auth)=)[^&\\s]+/gi, "$1[REDACTED]")
+      .replace(/[A-Za-z0-9_-]{48,}/g, "[LONG_TOKEN]")
+      .slice(0, 600);
+  }
+
+  function safeEndpoint(path) {
+    try {
+      return new URL(path, window.location.origin).pathname
+        .replace(/\\/series\\/[^/]+/g, "/series/:id")
+        .replace(/\\/play\\/[^/]+/g, "/play/:episodeId");
+    } catch (_) { return "[unknown endpoint]"; }
+  }
+
+  function debugWrite(level, event, detail) {
+    const entry = {time:new Date().toISOString(),level,event};
+    if (detail && typeof detail === "object") {
+      Object.keys(detail).forEach((key) => {
+        const value = detail[key];
+        if (value === null || ["string","number","boolean"].includes(typeof value)) {
+          entry[key] = typeof value === "string" ? safeDebugMessage(value) : value;
+        }
+      });
+    }
+    debugEntries.push(entry);
+    if (debugEntries.length > MAX_DEBUG_ENTRIES) debugEntries.splice(0, debugEntries.length - MAX_DEBUG_ENTRIES);
+    try { window.localStorage.setItem(DEBUG_STORAGE_KEY, JSON.stringify(debugEntries)); } catch (_) {}
+    const count = $("#debug-log-count");
+    if (count) count.textContent = String(debugEntries.length + serverDebugEntries.length);
+    if ($("#debug-dialog") && $("#debug-dialog").open) renderDebugPanel();
+  }
+
+  function summarizePayload(path, payload) {
+    const summary = {keys:payload && typeof payload === "object" ? Object.keys(payload).slice(0, 24) : []};
+    if (payload && Array.isArray(payload.items)) {
+      const items = payload.items;
+      let https = 0, http = 0, empty = 0, other = 0;
+      for (const item of items) {
+        const value = String(item && (item.cover_url || item.coverUrl) || "");
+        if (!value) empty++;
+        else if (/^https:\\/\\//i.test(value)) https++;
+        else if (/^http:\\/\\//i.test(value)) http++;
+        else other++;
+      }
+      summary.items = items.length;
+      summary.coverUrls = {https,http,empty,other};
+      summary.firstItemKeys = items[0] && typeof items[0] === "object" ? Object.keys(items[0]).slice(0, 30) : [];
+    }
+    if (payload && (payload.series || payload.episodes)) {
+      summary.seriesKeys = payload.series && typeof payload.series === "object" ? Object.keys(payload.series).slice(0, 32) : [];
+      summary.episodes = Array.isArray(payload.episodes) ? payload.episodes.length : 0;
+      summary.seriesCoverPresent = !!(payload.series && (payload.series.cover_url || payload.series.coverUrl));
+    }
+    return summary;
+  }
+
+  function renderDebugPanel() {
+    const count = $("#debug-log-count");
+    if (count) count.textContent = String(debugEntries.length + serverDebugEntries.length);
+    const runtime = serverDebugRuntime || {};
+    const badge = $("#debug-runtime-badge");
+    if (badge) {
+      badge.textContent = runtime.exited ? "WASM 已退出" : (runtime.initialized ? "WASM 已初始化" : "等待 SDK 初始化");
+      badge.classList.toggle("error", !!runtime.exited);
+    }
+    const summary = $("#debug-summary");
+    if (summary) {
+      const parts = [
+        "版本 " + APP_VERSION,
+        "浏览器 " + (navigator.onLine ? "在线" : "离线"),
+        "当前页面 " + state.view,
+        "WASM " + (runtime.initialized ? (runtime.exited ? "exited" : "running") : "not-loaded"),
+        "Runtime generation " + (runtime.generation || 0),
+        "前端 " + debugEntries.length + " 条",
+        "服务端 " + serverDebugEntries.length + " 条"
+      ];
+      summary.textContent = parts.join("  ·  ");
+    }
+    const output = $("#debug-output");
+    if (!output) return;
+    const all = debugEntries.concat(serverDebugEntries).sort((a,b) => String(a.time).localeCompare(String(b.time))).slice(-320);
+    output.textContent = all.map((entry) => {
+      const detail = Object.assign({}, entry);
+      delete detail.time; delete detail.level; delete detail.event;
+      return "[" + (entry.time || "") + "] [" + String(entry.level || "info").toUpperCase() + "] " +
+        (entry.event || "event") + (Object.keys(detail).length ? " " + JSON.stringify(detail) : "");
+    }).join("\\n") || "暂无日志。点击刷新日志后可读取边缘端记录。";
+    output.scrollTop = output.scrollHeight;
+  }
+
+  async function refreshDebugPanel() {
+    try {
+      const data = await request("/api/v1/debug/logs?limit=240");
+      serverDebugEntries = Array.isArray(data.events) ? data.events : [];
+      serverDebugRuntime = data.runtime || null;
+      debugWrite("info", "debug.server.refresh", {serverEntries:serverDebugEntries.length});
+    } catch (error) {
+      debugWrite("error", "debug.server.refresh.failed", {message:error.message || error});
+      renderDebugPanel();
+    }
+  }
+
+  function debugBundle() {
+    return {
+      app: "贝小果 Cloudflare Lite",
+      version: APP_VERSION,
+      generatedAt: new Date().toISOString(),
+      page: {view:state.view, url:window.location.origin + window.location.pathname},
+      browser: {
+        userAgent:navigator.userAgent,
+        language:navigator.language,
+        online:navigator.onLine,
+        viewport:window.innerWidth + "x" + window.innerHeight,
+        timezone:Intl.DateTimeFormat().resolvedOptions().timeZone
+      },
+      runtime:serverDebugRuntime,
+      frontend:debugEntries,
+      edge:serverDebugEntries
+    };
+  }
+
+  function openDebugPanel() {
+    const dialog = $("#debug-dialog");
+    if (!dialog.open) dialog.showModal();
+    renderDebugPanel();
+    refreshDebugPanel();
+  }
+
   async function request(path, options) {
     options = options || {};
     const headers = Object.assign({"Accept":"application/json","X-BXG-Session":playbackClientId}, options.headers || {});
+    const endpoint = safeEndpoint(path);
+    const method = String(options.method || "GET").toUpperCase();
     for (let attempt = 0; attempt < 2; attempt++) {
       if (options.signal && options.signal.aborted) {
         const aborted = new Error("request aborted");
         aborted.name = "AbortError";
         throw aborted;
       }
-      const response = await fetch(path, Object.assign({}, options, {headers}));
-      const payload = await response.json();
-      if (response.ok) return payload;
+      const startedAt = Date.now();
+      debugWrite("debug", "api.request", {method,endpoint,attempt:attempt + 1});
+      let response;
+      try {
+        response = await fetch(path, Object.assign({}, options, {headers}));
+      } catch (error) {
+        debugWrite("error", "api.network.error", {method,endpoint,durationMs:Date.now() - startedAt,message:error.message || error});
+        throw error;
+      }
+      let payload;
+      try {
+        payload = await response.json();
+      } catch (error) {
+        debugWrite("error", "api.invalid-json", {method,endpoint,status:response.status,durationMs:Date.now() - startedAt,message:error.message || error});
+        throw new Error("API 返回了无法解析的 JSON（HTTP " + response.status + "）");
+      }
+      if (response.ok) {
+        debugWrite("info", "api.response", {
+          method,endpoint,status:response.status,durationMs:Date.now() - startedAt,
+          summary:JSON.stringify(summarizePayload(path,payload)).slice(0, 420)
+        });
+        return payload;
+      }
 
       const err = payload && payload.error ? payload.error : {};
+      debugWrite("error", "api.response.error", {
+        method,endpoint,status:response.status,code:err.code || "",durationMs:Date.now() - startedAt,
+        message:err.message || ("HTTP " + response.status)
+      });
       if (err.code === "REQUEST_QUEUE_FULL" && attempt === 0) {
         const retryAfter = Number(response.headers.get("Retry-After")) || 2;
+        debugWrite("warn", "api.retry", {endpoint,retryAfter});
         await new Promise((resolve) => window.setTimeout(resolve, Math.min(5, retryAfter) * 1000));
         continue;
       }
@@ -277,6 +450,9 @@
   function handleGridImageError(event) {
     const image = event.target;
     if (!image || image.tagName !== "IMG") return;
+    let imageHost = "";
+    try { imageHost = new URL(image.currentSrc || image.src).hostname; } catch (_) {}
+    debugWrite("warn", "image.load.error", {host:imageHost, retryCount:Number(image.dataset.retryCount) || 0});
     const attempts = Number(image.dataset.retryCount) || 0;
     if (attempts < 1) {
       image.dataset.retryCount = String(attempts + 1);
@@ -1781,6 +1957,60 @@
   });
   $("#cast-dialog-close").addEventListener("click", () => $("#cast-dialog").close());
   $("#settings-button").addEventListener("click", openSettings);
+  $("#debug-log-button").addEventListener("click", openDebugPanel);
+  $("#debug-dialog-close").addEventListener("click", () => $("#debug-dialog").close());
+  $("#debug-dialog").addEventListener("click", (event) => {
+    if (event.target === $("#debug-dialog")) $("#debug-dialog").close();
+  });
+  $("#debug-refresh").addEventListener("click", refreshDebugPanel);
+  $("#debug-copy").addEventListener("click", async () => {
+    const payload = JSON.stringify(debugBundle(), null, 2);
+    try {
+      await navigator.clipboard.writeText(payload);
+      showToast("完整诊断包已复制");
+    } catch (_) {
+      const field = document.createElement("textarea");
+      field.value = payload;
+      field.style.position = "fixed";
+      field.style.opacity = "0";
+      document.body.appendChild(field);
+      field.select();
+      try { document.execCommand("copy"); showToast("完整诊断包已复制"); }
+      catch (error) { showToast("复制失败，请手动选中日志"); }
+      field.remove();
+    }
+  });
+  $("#debug-clear").addEventListener("click", async () => {
+    try { await request("/api/v1/debug/logs", {method:"DELETE"}); } catch (_) {}
+    debugEntries = [];
+    serverDebugEntries = [];
+    serverDebugRuntime = null;
+    try { localStorage.removeItem(DEBUG_STORAGE_KEY); } catch (_) {}
+    debugWrite("info", "debug.logs.cleared");
+    renderDebugPanel();
+  });
+  window.addEventListener("error", (event) => {
+    const target = event.target;
+    if (target && target.tagName === "IMG") {
+      let host = "";
+      try { host = new URL(target.currentSrc || target.src).hostname; } catch (_) {}
+      debugWrite("warn", "image.resource.error", {host});
+      return;
+    }
+    debugWrite("error", "window.error", {
+      message:event.message || "未知脚本错误",
+      source:event.filename || "",
+      line:event.lineno || 0,
+      column:event.colno || 0
+    });
+  }, true);
+  window.addEventListener("unhandledrejection", (event) => {
+    const reason = event.reason;
+    debugWrite("error", "window.unhandledrejection", {
+      message:reason && reason.message ? reason.message : String(reason),
+      stack:reason && reason.stack ? String(reason.stack).split("\\n").slice(0, 5).join(" | ") : ""
+    });
+  });
   $("#settings-close").addEventListener("click", () => {
     $("#settings-dialog").close();
     window.clearInterval(settingsRefreshTimer);
