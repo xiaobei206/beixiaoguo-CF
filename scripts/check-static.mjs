@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 const required = [
   "public/index.html", "public/assets/app.js", "public/assets/app.css",
   "public/assets/icon-192.png", "public/assets/icon-512.png",
-  "public/manifest.webmanifest", "public/_routes.json", "functions/api/v1/[[path]].js", "functions/openhongguo-runtime.js", "scripts/patch-openhongguo.mjs", "scripts/build-openhongguo.mjs", "wrangler.jsonc", "wrangler.worker.jsonc", "worker.js", "scripts/smoke-worker-runtime.mjs", "scripts/test-media-session.mjs", "functions/cenc-runtime.js", "functions/media-session.js", "edge-cenc/go.mod", "edge-cenc/cenc/layout.go", "edge-cenc/cenc/layout_test.go", "edge-cenc/wasm/main.go", "docs/deploy-cloudflare-cn.md", "VERSION"
+  "public/manifest.webmanifest", "public/_routes.json", "functions/api/v1/[[path]].js", "functions/openhongguo-runtime.js", "scripts/patch-openhongguo.mjs", "scripts/build-openhongguo.mjs", "wrangler.jsonc", "wrangler.worker.jsonc", "worker.js", "scripts/smoke-worker-runtime.mjs", "scripts/test-media-session.mjs", "scripts/test-route-ip.mjs", "functions/route-ip.js", "functions/cenc-runtime.js", "functions/media-session.js", "edge-cenc/go.mod", "edge-cenc/cenc/layout.go", "edge-cenc/cenc/layout_test.go", "edge-cenc/wasm/main.go", "docs/deploy-cloudflare-cn.md", "VERSION"
 ];
 for (const file of required) await access(file);
 
