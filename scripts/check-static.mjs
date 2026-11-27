@@ -26,7 +26,7 @@ const wrangler = JSON.parse(await readFile("wrangler.jsonc", "utf8"));
 const workerWrangler = JSON.parse(await readFile("wrangler.worker.jsonc", "utf8"));
 if (packageInfo.version !== version) throw new Error("package.json version does not match VERSION");
 if (packageInfo.dependencies?.openhongguo) throw new Error("Do not install the stale npm openhongguo WASM package; build xiaobei206/openhongguo directly.");
-if (!sdkBuildScript.includes("xiaobei206/openhongguo.git") || !sdkBuildScript.includes("GO_SHA256") || !sdkBuildScript.includes("go test")) throw new Error("Build must fetch, verify and test the self-owned openhongguo source.");
+if (!sdkBuildScript.includes("xiaobei206/openhongguo.git") || !sdkBuildScript.includes("GO_SHA256") || !sdkBuildScript.includes('["test", "./..."]')) throw new Error("Build must fetch, verify and test the self-owned openhongguo source.");
 if (!sdkBuildInfo.includes('"repository":"xiaobei206/openhongguo"') || !sdkBuildInfo.includes('"playbackFallback":"video_tab"') || !sdkBuildInfo.includes('"deviceHeartbeat":true')) throw new Error("Packaged WASM was not built from the self-owned playback SDK.");
 if (!worker.includes(`const VERSION = "${version}";`)) throw new Error("Functions version does not match VERSION");
 if (wrangler.rules !== undefined) throw new Error("Pages Wrangler config must not contain the Workers-only rules field; Pages imports WASM modules directly");
