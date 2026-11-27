@@ -164,6 +164,10 @@ Wrangler 命令会交互式要求输入 Secret；Worker 的 `secret put` 会发�
 如果 Pages 和 Worker **都**显示缺失提示，请分别检查两个部署的设置，而不是只在其中一个地方添加。缺少 Secret 时，未受保护的直接视频仍可播放，受保护分集返回 `MEDIA_SECRET_REQUIRED`。当前支持渐进式 MP4 CENC AES-CTR；HLS/DASH 和其他 DRM 封装仍不支持。
 
 
+## 短剧连续播放预读
+
+从 0.1.11 起，播放时会由 Cloudflare 预解析后续最多 6 集的播放地址和短时媒体会话；浏览器同时预载当前集之后最多 3 集的视频。切集时将优先使用已预解析地址。Cloudflare 的 6 集预读不代表完整视频文件已下载到边缘节点；浏览器是否以及预载多少数据仍取决于浏览器策略、网络速度和媒体源 Range 响应。浏览器缓存使用 `private` 且不超过媒体会话的有效期，不会把个人播放会话写入公共共享缓存。
+
 ## 播放开始后约一秒停住时如何定位
 
 使用 0.1.10 或更新版本后，打开网页右上角 DEBUG，重新播放一次，等待停住后再复制完整诊断包。新版本会把浏览器原生视频的媒体代理请求关联回同一匿名会话，并记录 `media.cenc.stream.failed`、`media.cenc.stream.truncated`、`player.media.stalled` 和 `player.media.error` 等事件。请保留事件名、HTTP 状态、错误码和时间范围即可，不要单独分享完整的 `/api/v1/media/<token>` 播放 URL，因为它是短时播放凭据。
