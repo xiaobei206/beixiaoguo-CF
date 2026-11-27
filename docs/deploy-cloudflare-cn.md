@@ -113,41 +113,55 @@ Worker 会使用配置名 `beixiaoguo-cf-worker`，静态资源走 Workers Stati
 
 ## 浏览器自选 CF 反代 IP（0.1.13）
 
-贝小果增加了浏览器内的「播放线路」管理器：用户自行添加／命名／删除 IPv4 或 IPv6，只填写 IP，端口固定为 443；列表只存本机 localStorage。选择后，浏览器设置当前站点 Cookie `bxg_alt_ip`，Cloudflare 响应规则读取该 Cookie 并动态公告 `Alt-Svc: h2="IP:443"; ma=300`；选择默认线路时清除 Cookie 并公告 `Alt-Svc: clear`。
+贝小果增加了浏览器内的「播放线路」管理器：用户自行添加／命名／删除 IPv4 或 IPv6，只填写 IP，端口固定为 443；线路列表只存本机 localStorage。选择后，前端只发起一次同源公告请求 `/api/v1/route?alt_ip=IP`，把 IP 放进 URL 查询参数，不设置 Cookie。Cloudflare 响应规则读取该参数并动态公告 `Alt-Svc: h2="IP:443"; ma=300`；选择默认线路时公告 `Alt-Svc: clear`。
 
 **这个功能需要自有橙云域名。** Cloudflare 会过滤 Worker 源站直接返回的 Alt-Svc，因此要在 Zone 的 Response Header Transform Rules 阶段补充。默认 `workers.dev` 和 `pages.dev` 域名不能设置用户 Zone 的响应头转换规则；只在这类默认域名使用时，线路仍可录入与保存，但不会真正改变浏览器接入入口。
 
-### 一次性创建两条响应头规则
+下面规则只读取 `http.request.uri.args`，不依赖 Cloudflare Pro 才提供的 `http.request.cookies` 字段；Cloudflare Transform Rules 本身所有计划均可用。
 
-进入 Cloudflare Dashboard → 对应 Zone → Rules → Transform Rules → Response Header Transform Rules。
+### 一次性创建三条响应头规则
 
-**规则 1：公告用户选择的 IP**
+进入 Cloudflare Dashboard → 对应 Zone → Rules → Transform Rules → Response Header Transform Rules。三条规则均限定在 `/api/v1/route` 请求上。
+
+**规则 1：IPv4 自选地址**
 
 匹配表达式（将 `YOUR_HOSTNAME` 换成实际自定义域名）：
 
 ```text
-(http.host eq "YOUR_HOSTNAME" and any(http.request.cookies["bxg_alt_ip"][*]))
+(http.host eq "YOUR_HOSTNAME" and http.request.uri.path eq "/api/v1/route" and len(http.request.uri.args["alt_ip"][0]) gt 0 and http.request.uri.args["alt_ip"][0] ne "auto" and not (http.request.uri.args["alt_ip"][0] contains ":"))
 ```
 
 响应头名称：`Alt-Svc`；操作：**Set dynamic**；动态值：
 
 ```text
-concat("h2=\\"", http.request.cookies["bxg_alt_ip"][0], ":443\\\"; ma=300")
+concat("h2=\\"", http.request.uri.args["alt_ip"][0], ":443\\\"; ma=300")
 ```
 
-**规则 2：清除自选入口，恢复默认线路**
+**规则 2：IPv6 自选地址**
 
 匹配表达式：
 
 ```text
-(http.host eq "YOUR_HOSTNAME" and not any(http.request.cookies["bxg_alt_ip"][*]))
+(http.host eq "YOUR_HOSTNAME" and http.request.uri.path eq "/api/v1/route" and http.request.uri.args["alt_ip"][0] contains ":")
+```
+
+响应头名称：`Alt-Svc`；操作：**Set dynamic**；动态值：
+
+```text
+concat("h2=\\\"[", http.request.uri.args["alt_ip"][0], "]:443\\\"; ma=300")
+```
+
+**规则 3：恢复默认线路**
+
+匹配表达式：
+
+```text
+(http.host eq "YOUR_HOSTNAME" and http.request.uri.path eq "/api/v1/route" and http.request.uri.args["alt_ip"][0] eq "auto")
 ```
 
 响应头名称：`Alt-Svc`；操作：**Set static**；值：`clear`。
 
-两条规则里的 `YOUR_HOSTNAME` 都要替换成实际绑定的主机名。用户选择线路后，贝小果会写入 `bxg_alt_ip` Cookie；选择默认线路会删除该 Cookie。可在页面线路设置中复制规则说明。
-
-浏览器会在后续建立新连接时尝试备用入口，不会强制断开正在播放的连接。备用 IP 必须接受原网页域名的 TLS SNI、通过证书校验并支持 HTTP/2；VLESS 连接成功本身不能证明浏览器的 h2 连接可用。DEBUG 的 `network.alt-used` 可用于判断浏览器是否发送了 `Alt-Used` 请求头。
+三条规则里的 `YOUR_HOSTNAME` 都要替换成实际绑定的主机名。浏览器会在后续建立新连接时尝试备用入口，不会强制断开正在播放的连接。备用 IP 必须接受原网页域名的 TLS SNI、通过证书校验并支持 HTTP/2；VLESS 连接成功本身不能证明浏览器的 h2 连接可用。DEBUG 的 `network.alt-used` 可用于判断浏览器是否发送了 `Alt-Used` 请求头。
 
 ## KV 是否需要创建？
 
