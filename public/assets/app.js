@@ -22,7 +22,7 @@
   let deferredInstallPrompt = null;
   const DEBUG_STORAGE_KEY = "beixiaoguo.cf.debug-log";
   const APP_VERSION = "0.1.11";
-  const EDGE_PREFETCH_COUNT = 16;
+  const EDGE_PREFETCH_COUNT = 6;
   const BROWSER_PRELOAD_COUNT = 3;
   const MAX_DEBUG_ENTRIES = 180;
   let debugEntries = loadDebugEntries();
@@ -1985,7 +1985,6 @@
         requested:result.requested || episodeIds.length, ready:result.ready || 0
       });
       syncBrowserPreloads(playback.index);
-      if (playback.index !== startIndex) ensureEdgePlaybackPrefetch(playback.index);
     } catch (error) {
       if (state.playback === playback) {
         episodeIds.forEach((id) => {
@@ -1996,6 +1995,9 @@
       }
     } finally {
       playback.prefetchInFlight = false;
+      if (state.playback === playback && playback.index !== startIndex) {
+        Promise.resolve().then(() => ensureEdgePlaybackPrefetch(playback.index));
+      }
     }
   }
 
