@@ -51,6 +51,10 @@ Pages Function 中使用 openhongguo 的 Node.js/WASM SDK，注入基于 Fetch �
 
 `worker.js` 包装并复用同一份 `functions/api/v1/[[path]].js` API 实现；非 API 请求通过 `ASSETS` 绑定交给 Workers Static Assets。通过 `wrangler.worker.jsonc` 独立部署，不修改 Pages 的 `wrangler.jsonc`。在 Workers Builds 中应使用 `npm run build` 作为 Build command，并用 `npx --yes wrangler@latest deploy --config wrangler.worker.jsonc` 作为 Deploy command。
 
+## 双层播放预读（0.1.11）
+
+播放当前集后，前端调用 `/api/v1/prefetch`，让 Cloudflare Worker/Pages Functions 顺序预解析后续最多 6 集的播放地址；受保护 CENC 分集同时生成短时加密媒体会话。切集时优先消费已预解析会话，预读窗口随播放进度向前补齐。浏览器端只为当前集之后最多 3 集创建隐藏的 `video preload=auto` 元素，利用同源媒体地址和短时 `private` Range 缓存尽量复用已获取的数据。浏览器可能忽略 preload 提示，因此它不等价于保证三集完整下载。Cloudflare 端的 6 集是播放地址／会话预解析，不是把六集完整媒体文件预存到边缘缓存。
+
 ## 后续优先级
 
 1. CI 验证 Pages Function 打包、WASM 加载与 Worker 运行时。
