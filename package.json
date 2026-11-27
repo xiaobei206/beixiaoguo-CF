@@ -12,5 +12,8 @@
   },
   "dependencies": {
     "openhongguo": "0.4.0"
+  },
+  "devDependencies": {
+    "wrangler": "4.168.0"
   }
 }
