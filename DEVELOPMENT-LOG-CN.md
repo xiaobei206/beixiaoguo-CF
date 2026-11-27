@@ -7,7 +7,7 @@
 - 改用 Wrangler 的 `CompiledWasm` 模块规则，将 SDK 二进制在构建时处理为预编译的 `WebAssembly.Module`。
 - 调整 SDK 兼容补丁，使同一套初始化逻辑同时支持 Node 的字节数组结果和 Workers 的预编译模块结果。
 - 统一更新 VERSION、package.json、Functions 版本和 HTML 资源缓存查询参数。
-- 当前提交等待新增的 Pages 本地运行时烟雾测试确认 WASM 初始化成功。
+- CI 运行时烟雾测试已通过：Wrangler Pages Functions 启动成功，`/api/v1/health?sdk=1` 返回 SDK ready；测试未请求上游片库。
 
 ## 0.1.1 — 2026-11-27
 

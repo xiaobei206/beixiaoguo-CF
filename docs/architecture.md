@@ -31,7 +31,7 @@ Pages Function 中使用 openhongguo 的 Node.js/WASM SDK，注入基于 Fetch �
 2. 电视接力：公共边缘函数无法直接对用户家庭 LAN 执行 mDNS 或原始 TCP；需要原版 N1 或可访问 LAN 的配套助手。
 3. 图片代理与磁盘缓存：轻量版直接使用上游封面地址，暂不提供 N1 的 RAM + 磁盘两级缓存及预热调度。
 4. 播放兼容性：取决于浏览器对 MP4/HLS、CDN Range/CORS 和编码的支持，应在 iOS Safari、Android Chrome 和桌面浏览器分别验收。
-5. SDK 环境兼容性：必须通过 Wrangler Pages Functions 运行时烟雾测试，确认 WASM 能在 Worker 环境初始化；编译成功本身不算验收。
+5. SDK 环境兼容性：Wrangler Pages Functions 运行时烟雾测试已通过，确认 WASM 能在本地 Worker 运行环境初始化；真实上游接口仍需单独验收。
 
 ## Cloudflare Pages 配置
 

@@ -12,7 +12,7 @@
 **0.1.2 — 2026-11-27**
 
 - 已迁移原版 UI/PWA 资源。
-- 已接入 openhongguo Node.js/WASM SDK；0.1.1/0.1.2 持续适配边缘 WASM 加载：静态导入 Go 运行时、将 WASM 预编译为 `WebAssembly.Module`，并由 CI 运行真实 Pages 本地 runtime smoke test。
+- 已接入 openhongguo Node.js/WASM SDK；0.1.2 采用预编译 `WebAssembly.Module`，Pages 本地运行时烟雾测试已通过：[CI 运行记录](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/45947306281)。该测试验证 SDK 初始化，不代表真实上游接口、受保护视频流或电视接力已验收。
 - 已建立推荐、搜索、详情、多季、榜单、新剧与播放解析接口适配层，仍需真实上游验收。
 - CENC 受保护流、图片预热/持久缓存、电视接力尚未迁移。
 - 原版 beixiaoguo-web 不受本仓库修改影响。
