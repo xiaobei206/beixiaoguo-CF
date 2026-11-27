@@ -17,7 +17,7 @@
             └─ openhongguo Node.js/WASM SDK
                  └─ 红果上游接口
 
-Pages Function 中使用 openhongguo 的 Node.js/WASM SDK，注入基于 Fetch 的 Transport。由于 SDK 默认通过 Node 的动态 `require()` / 文件路径读取 WASM，Cloudflare 构建阶段用 `scripts/patch-openhongguo.mjs` 做一个受版本校验的兼容补丁；`functions/openhongguo-runtime.js` 则静态导入 `wasm_exec.js` 和 WASM 二进制，让边缘运行时不再依赖动态文件查找。匿名设备 profile 在边缘 isolate 的内存中按浏览器会话标识分开保存，不写入数据库。边缘 isolate 冷启动后内存会重置，必要时 SDK 会重新注册匿名设备。
+Pages Function 中使用 openhongguo 的 Node.js/WASM SDK，注入基于 Fetch 的 Transport。由于 SDK 默认通过 Node 的动态 `require()` / 文件路径读取 WASM，Cloudflare 构建阶段用 `scripts/patch-openhongguo.mjs` 做一个受版本校验的兼容补丁；`functions/openhongguo-runtime.js` 静态导入 `wasm_exec.js` 和预编译的 `WebAssembly.Module`（Wrangler `CompiledWasm` 规则），避免边缘运行时动态查找模块或动态编译 WASM。匿名设备 profile 在边缘 isolate 的内存中按浏览器会话标识分开保存，不写入数据库。边缘 isolate 冷启动后内存会重置，必要时 SDK 会重新注册匿名设备。
 
 ## API 迁移
 

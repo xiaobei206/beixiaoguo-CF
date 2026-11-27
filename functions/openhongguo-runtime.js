@@ -1,15 +1,12 @@
 import "../node_modules/openhongguo/dist/wasm_exec.js";
-import wasmBytes from "../node_modules/openhongguo/dist/openhongguo.wasm";
+import wasmModule from "../node_modules/openhongguo/dist/openhongguo.wasm";
 
-// The Node SDK expects to read these files via Node's filesystem and require().
-// The Pages bundle statically imports them instead, avoiding dynamic module lookup
-// and providing the binary directly without filesystem access in the edge runtime.
+// Cloudflare's CompiledWasm loader provides a precompiled WebAssembly.Module.
+// The Node SDK's default file-based loader is patched during build to use this.
 if (typeof globalThis.Go !== "function") {
   throw new Error("openhongguo: wasm_exec.js did not initialize globalThis.Go");
 }
-const wasm = wasmBytes instanceof ArrayBuffer
-  ? new Uint8Array(wasmBytes)
-  : ArrayBuffer.isView(wasmBytes)
-    ? new Uint8Array(wasmBytes.buffer, wasmBytes.byteOffset, wasmBytes.byteLength)
-    : new Uint8Array(wasmBytes);
-globalThis.__BXG_OPENHONGGUO_WASM = wasm;
+if (!(wasmModule instanceof WebAssembly.Module)) {
+  throw new Error("openhongguo: Cloudflare did not load the Wasm as a precompiled module");
+}
+globalThis.__BXG_OPENHONGGUO_WASM = wasmModule;

@@ -16,8 +16,10 @@ if (routes.version !== 1 || !routes.include?.includes("/api/*")) throw new Error
 const version = (await readFile("VERSION", "utf8")).trim();
 const packageInfo = JSON.parse(await readFile("package.json", "utf8"));
 const worker = await readFile("functions/api/v1/[[path]].js", "utf8");
+const wrangler = JSON.parse(await readFile("wrangler.jsonc", "utf8"));
 if (packageInfo.version !== version) throw new Error("package.json version does not match VERSION");
 if (!worker.includes(`const VERSION = "${version}";`)) throw new Error("Functions version does not match VERSION");
+if (!wrangler.rules?.some(rule => rule.type === "CompiledWasm" && rule.globs?.includes("**/*.wasm"))) throw new Error("Wrangler must compile the SDK WASM as a precompiled module");
 if (!html.includes("/assets/app.js?v=" + version)) throw new Error("HTML JS version does not match VERSION");
 if (!html.includes("/assets/app.css?v=" + version)) throw new Error("HTML CSS version does not match VERSION");
 if (!manifest.name.includes("贝小果")) throw new Error("PWA manifest has an unexpected name");
