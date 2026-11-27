@@ -28,9 +28,9 @@ Pages Function 中使用 openhongguo 的 Node.js/WASM SDK，注入基于 Fetch �
 
 ## 浏览器自选 Cloudflare 入口 IP（0.1.13）
 
-前端提供本机线路列表，支持自填 IPv4／IPv6、固定端口 443；线路内容与选择保存在浏览器 localStorage。选择后在同源设置 Cookie `bxg_alt_ip`，再请求 `/api/v1/route` 获取线路诊断。Worker 读取请求的 `Alt-Used` 并将其放进边缘诊断；前端检查最终响应是否带有目标 `Alt-Svc`。
+前端提供本机线路列表，支持自填 IPv4／IPv6、固定端口 443；线路内容与选择保存在浏览器 localStorage。选择后只发起一次同源 `/api/v1/route?alt_ip=...` 请求，将 IP 放在 URL 查询参数中，不设置线路 Cookie。Worker 读取请求的 `Alt-Used` 并将其放进边缘诊断；前端检查最终响应是否带有目标 `Alt-Svc`。
 
-Cloudflare 会过滤 Worker 源站直接添加的 `Alt-Svc`，所以要在 Cloudflare Zone 的 Response Header Transform Rules 阶段动态补充。规则读取 `http.request.cookies["bxg_alt_ip"]`，并公告 `h2="IP:443"; ma=300`；无 Cookie 时设置 `Alt-Svc: clear`。这要求绑定用户自己的橙云自定义域名；`workers.dev`／`pages.dev` 默认域名不在用户 Zone 内，无法配置该规则。Alt-Svc 是备用服务提示，只用于后续新连接，不会强制中断现有连接；备用 IP 必须支持原始站点域名的 TLS SNI、证书验证与 HTTP/2。仅能跑 VLESS 不足以证明浏览器接入可用。
+Cloudflare 会过滤 Worker 源站直接添加的 `Alt-Svc`，所以要在 Cloudflare Zone 的 Response Header Transform Rules 阶段动态补充。规则使用 `http.request.uri.args["alt_ip"][0]` 读取本次公告请求中的 IP，并公告 `h2="IP:443"; ma=300`；选择默认线路时设置 `Alt-Svc: clear`。`http.request.uri.args` 可用于查询参数，避免依赖 Pro 版才提供的 `http.request.cookies` 字段。这要求绑定用户自己的橙云自定义域名；`workers.dev`／`pages.dev` 默认域名不在用户 Zone 内，无法配置该规则。Alt-Svc 是备用服务提示，只用于后续新连接，不会强制中断现有连接；备用 IP 必须支持原始站点域名的 TLS SNI、证书验证与 HTTP/2。仅能跑 VLESS 不足以证明浏览器接入可用。
 
 ## 运行诊断
 
