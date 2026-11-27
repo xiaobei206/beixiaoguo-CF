@@ -252,11 +252,24 @@
     const dialog = $("#settings-dialog");
     if (!dialog.open) dialog.showModal();
     window.clearInterval(settingsRefreshTimer);
-    $("#settings-live").textContent =
-      "当前为 Cloudflare 轻量版：页面由 Pages 或 Workers 提供，片库请求按需通过边缘函数执行。\n\n" +
-      "本版本不运行 N1 那样的常驻预热任务，也不提供服务器磁盘缓存管理。收藏和匿名会话标识保存在当前浏览器，无需创建 KV。\n\n" +
-      "视频：可直接播放的非加密流会尝试使用浏览器原生播放器；受保护的 CENC 流正在迁移，暂不可播放。\n\n" +
-      "电视接力：Cloudflare 边缘函数不能直接搜索家庭局域网，暂需原版 N1 或本地助手。";
+    $("#settings-live").innerHTML =
+      '<div class="deployment-guide">' +
+        '<p class="guide-intro">推荐选择 Pages + GitHub 授权：首次设置一次，之后每次更新代码都会自动部署。无需创建 KV、D1 或 R2。</p>' +
+        '<section class="guide-section"><h3>方案 A · GitHub 授权连接 Pages（推荐）</h3>' +
+          '<ol class="guide-steps">' +
+            '<li>打开 <a href="https://dash.cloudflare.com/" target="_blank" rel="noopener noreferrer">Cloudflare 控制台</a>，进入 <strong>Workers & Pages → Create application → Pages → Connect to Git</strong>。</li>' +
+            '<li>跳转到 GitHub 后，安装并授权 <strong>Cloudflare Workers & Pages</strong> 应用；选择仓库 <code>xiaobei206/beixiaoguo-CF</code>。</li>' +
+            '<li>生产分支选 <code>main</code>；Framework preset 选 <code>None</code>；Build command 填 <code>npm run build</code>；Build output directory 填 <code>public</code>；Root directory 留空。</li>' +
+            '<li>点击部署。完成后访问 Cloudflare 分配的 <code>*.pages.dev</code> 地址；以后推送到 <code>main</code> 会自动更新。</li>' +
+          '</ol></section>' +
+        '<section class="guide-section"><h3>ZIP／文件夹能不能直接拖放？</h3>' +
+          '<p>不建议，也不能作为完整安装方式。控制台的 Direct Upload 拖放不会编译本项目的 <code>functions/</code>；只上传网页文件可能导致主页能打开，但 <code>/api/v1/*</code> 不能运行。想手动发布，请按完整教程从仓库根目录使用 Wrangler。</p></section>' +
+        '<section class="guide-section"><h3>方案 B · Workers（备用）</h3>' +
+          '<p>仓库已经提供独立的 <code>worker.js</code>。从仓库根目录运行 <code>npx wrangler login</code>，再运行 <code>npx wrangler deploy --config wrangler.worker.jsonc</code>；若要 Git 自动部署，在 Workers Builds 中使用 <code>npm run build</code> 作为构建命令，使用 <code>npx --yes wrangler@latest deploy --config wrangler.worker.jsonc</code> 作为部署命令。</p></section>' +
+        '<p class="guide-links"><a href="https://github.com/xiaobei206/beixiaoguo-CF/blob/main/docs/deploy-cloudflare-cn.md" target="_blank" rel="noopener noreferrer">打开完整中文部署教程 ↗</a>' +
+          ' · <a href="https://developers.cloudflare.com/pages/get-started/git-integration/" target="_blank" rel="noopener noreferrer">Pages 官方文档 ↗</a></p>' +
+        '<p class="guide-note">部署验收：<code>/api/v1/health</code> 应返回 <code>status: ok</code>；<code>/api/v1/health?sdk=1</code> 应返回 <code>sdk: ready</code>。这些检查只验证 API/WASM 启动，不代表上游片库和所有视频均已通过测试。</p>' +
+      '</div>';
     const form = $("#settings-form");
     if (form) form.hidden = true;
   }

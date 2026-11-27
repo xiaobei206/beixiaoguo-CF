@@ -11,8 +11,8 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/assets/icon-192.png">
   <title>贝小果 Lite · 短剧时间</title>
-  <link rel="stylesheet" href="/assets/app.css?v=0.1.3">
-  <script defer src="/assets/app.js?v=0.1.3"></script>
+  <link rel="stylesheet" href="/assets/app.css?v=0.1.4">
+  <script defer src="/assets/app.js?v=0.1.4"></script>
 </head>
 <body>
   <div class="app-shell">
@@ -29,7 +29,7 @@
       <div class="topbar-actions">
         <span class="lan-pill"><span></span> Cloudflare 边缘版</span>
         <button id="install-app-button" class="install-button" type="button" aria-label="添加贝小果到桌面">⇧ 添加到桌面</button>
-        <button id="settings-button" class="settings-button" type="button" aria-label="运行说明">ℹ 运行说明</button>
+        <button id="settings-button" class="settings-button" type="button" aria-label="部署教程">↗ 部署教程</button>
       </div>
     </header>
 
@@ -77,8 +77,8 @@
     </main>
 
     <footer class="footer">
-      <span>贝小果 <b>0.1.3</b></span>
-      <span>只在你的家庭网络中提供服务 · 浏览数据保存在当前浏览器</span>
+      <span>贝小果 <b>0.1.4</b></span>
+      <span>通过 Cloudflare 边缘网络提供服务 · 收藏与会话标识保存在当前浏览器</span>
     </footer>
   </div>
 
@@ -104,7 +104,7 @@
   <dialog id="settings-dialog" class="detail-dialog settings-dialog">
     <button id="settings-close" class="dialog-close" type="button" aria-label="关闭">×</button>
     <div class="detail-content">
-      <h2>运行说明</h2>
+      <h2>Cloudflare 部署教程</h2>
       <p class="detail-meta">此版本由 Cloudflare Pages 或 Workers 承载，片库 API 由边缘函数按需处理。</p>
       <div id="settings-live" class="settings-live">正在读取运行说明…</div>
       <form id="settings-form" class="settings-form">

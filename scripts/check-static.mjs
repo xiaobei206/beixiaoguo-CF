@@ -26,7 +26,9 @@ if (workerWrangler.assets?.directory !== "./public" || workerWrangler.assets?.bi
 if (!workerWrangler.rules?.some(rule => rule.type === "CompiledWasm" && rule.globs?.includes("**/*.wasm"))) throw new Error("Workers Wrangler config must compile the SDK WASM as a precompiled module");
 if (!html.includes("/assets/app.js?v=" + version)) throw new Error("HTML JS version does not match VERSION");
 if (!html.includes("/assets/app.css?v=" + version)) throw new Error("HTML CSS version does not match VERSION");
-if (!html.includes("Cloudflare 边缘版") || html.includes("家庭局域网")) throw new Error("Cloudflare homepage must not describe the public edge deployment as LAN-only");
+if (!html.includes("Cloudflare 边缘版") || html.includes("家庭局域网") || html.includes("只在你的家庭网络中提供服务")) throw new Error("Cloudflare homepage must not describe the public edge deployment as LAN-only");
+if (!html.includes('aria-label="部署教程"') || !html.includes("Cloudflare 部署教程")) throw new Error("Homepage must expose the Cloudflare deployment guide");
+if (!js.includes("docs/deploy-cloudflare-cn.md") || !js.includes("Connect to Git")) throw new Error("Homepage deployment guide must link to the full tutorial and explain Pages Git setup");
 if (!html.includes("贝小果 <b>" + version + "</b>")) throw new Error("Homepage footer version does not match VERSION");
 if (!manifest.name.includes("贝小果")) throw new Error("PWA manifest has an unexpected name");
 if (!js.includes("X-BXG-Session")) throw new Error("API calls must include anonymous session ID");

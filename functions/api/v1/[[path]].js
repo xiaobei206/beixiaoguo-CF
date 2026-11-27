@@ -1,7 +1,7 @@
 import "../../openhongguo-runtime.js";
 import { createClient, SearchFilter } from "openhongguo";
 
-const VERSION = "0.1.3";
+const VERSION = "0.1.4";
 const MAX_CLIENTS = 128;
 const MAX_PROFILES = 256;
 const clients = new Map();

@@ -390,3 +390,28 @@ body { padding-top:env(safe-area-inset-top); }
 
 /* Cloudflare Lite does not expose N1 resident-cache controls. */
 .settings-form[hidden], .settings-form { display: none !important; }
+
+
+/* Compact Cloudflare deployment guide available directly from the homepage. */
+.settings-button {
+  flex:none; padding:8px 11px; border:1px solid var(--line); border-radius:10px;
+  color:var(--text); background:rgba(255,255,255,.035); cursor:pointer; font-size:12px; white-space:nowrap;
+}
+.settings-button:hover { border-color:rgba(241,106,138,.42); background:rgba(241,106,138,.08); }
+.settings-dialog .detail-content { max-height:min(82vh,780px); overflow:auto; }
+.deployment-guide { display:grid; gap:15px; color:var(--text); font-size:13px; line-height:1.72; }
+.deployment-guide p { margin:0; }
+.deployment-guide h3 { margin:0 0 8px; font-size:14px; }
+.deployment-guide .guide-intro { color:#f2dce4; }
+.deployment-guide .guide-steps { display:grid; gap:7px; margin:0; padding-left:22px; }
+.deployment-guide code { padding:1px 4px; border:1px solid rgba(255,255,255,.10); border-radius:5px; color:#ffe2e9; background:rgba(255,255,255,.045); overflow-wrap:anywhere; }
+.deployment-guide a { color:#ff9eb4; text-decoration:underline; text-underline-offset:3px; }
+.deployment-guide .guide-section { display:grid; gap:5px; }
+.deployment-guide .guide-links { display:flex; flex-wrap:wrap; gap:8px; }
+.deployment-guide .guide-note { padding:10px 12px; border:1px solid rgba(255,255,255,.09); border-radius:9px; color:var(--muted); font-size:11px; }
+@media (max-width:520px) {
+  .settings-button { padding:7px 8px; font-size:11px; }
+  .deployment-guide { gap:12px; font-size:12px; }
+  .deployment-guide h3 { font-size:13px; }
+  .deployment-guide .guide-note { overflow-wrap:anywhere; }
+}

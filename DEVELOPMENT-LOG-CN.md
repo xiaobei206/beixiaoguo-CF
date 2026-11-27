@@ -1,5 +1,15 @@
 # 贝小果 Cloudflare 开发日志
 
+## 0.1.4 — 2026-11-27
+
+### 首页部署指导
+- 主页顶部新增“部署教程”入口，直接说明 GitHub 授权连接 Cloudflare Pages 的步骤和构建参数。
+- 明确提示控制台 ZIP／文件夹拖放不会编译 `functions/`；提供 Wrangler 手动部署和 Workers 备用路线。
+- 从应用内直接链接完整中文教程和 Cloudflare 官方 Pages Git 集成文档。
+- 修正页脚仍残留的“只在你的家庭网络中提供服务”，改为 Cloudflare 边缘部署说明。
+- 统一 `VERSION`、`package.json`、Functions 版本、HTML 缓存参数及页脚为 0.1.4；增加 CI 规则防止安装教程和公网部署文案退化。
+
+
 ## 0.1.3 — 2026-11-27
 
 ### 部署体验与封面显示
