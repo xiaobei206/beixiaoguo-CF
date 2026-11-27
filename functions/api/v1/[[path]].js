@@ -185,6 +185,21 @@ async function callClient(session, method, ...args) {
         debugRecord(session, "error", "wasm.call.after-exit", {
           method, message, runtime: runtimeDiagnostics()
         });
+        // The SDK's module-scoped runtime promise may still point at a Go
+        // instance whose callback trampoline is already dead. Mark it exited
+        // so the next createClient() forces loadRuntime() to instantiate a
+        // fresh Go/WASM runtime instead of wrapping the stale global API.
+        const go = globalThis.__BXG_OPENHONGGUO_GO;
+        if (go) go.exited = true;
+        const previous = globalThis.__BXG_OPENHONGGUO_STATE || {};
+        globalThis.__BXG_OPENHONGGUO_STATE = {
+          ...previous,
+          generation: Number(previous.generation || globalThis.__BXG_OPENHONGGUO_GENERATION) || 0,
+          exited: true,
+          exitedAt: Date.now(),
+          error: sanitizeDebugMessage(message),
+        };
+        delete globalThis.__openhongguo;
         clients.clear();
         continue;
       }
