@@ -8,7 +8,7 @@
     "prebuild": "node scripts/build-openhongguo.mjs && node scripts/patch-openhongguo.mjs",
     "build": "node scripts/check-static.mjs",
     "pretest": "node scripts/build-openhongguo.mjs && node scripts/patch-openhongguo.mjs",
-    "test": "node scripts/check-static.mjs && node scripts/test-media-session.mjs && node scripts/smoke-sdk.mjs"
+    "test": "node scripts/check-static.mjs && node scripts/test-route-ip.mjs && node scripts/test-media-session.mjs && node scripts/smoke-sdk.mjs"
   },
   "devDependencies": {
     "wrangler": "4.168.0"
