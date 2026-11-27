@@ -66,8 +66,16 @@
   }
 
   function safeImage(value) {
-    const url = String(value || "");
-    return /^\/api\/v1\/images\/[a-f0-9]{32}$/i.test(url) ? url : "";
+    const raw = String(value || "").trim();
+    if (/^\/api\/v1\/images\/[a-f0-9]{32}$/i.test(raw)) return raw;
+    try {
+      const parsed = new URL(raw, window.location.origin);
+      if (parsed.protocol !== "https:" || parsed.username || parsed.password) return "";
+      if (parsed.origin === window.location.origin) return "";
+      return parsed.href;
+    } catch (_) {
+      return "";
+    }
   }
 
   function loadFavorites() {
@@ -245,7 +253,7 @@
     if (!dialog.open) dialog.showModal();
     window.clearInterval(settingsRefreshTimer);
     $("#settings-live").textContent =
-      "当前为 Cloudflare 轻量版：静态页面由 Pages 提供，片库请求按需通过边缘函数执行。\n\n" +
+      "当前为 Cloudflare 轻量版：页面由 Pages 或 Workers 提供，片库请求按需通过边缘函数执行。\n\n" +
       "本版本不运行 N1 那样的常驻预热任务，也不提供服务器磁盘缓存管理。收藏和匿名会话标识保存在当前浏览器。\n\n" +
       "视频：可直接播放的非加密流会尝试使用浏览器原生播放器；受保护的 CENC 流正在迁移，暂不可播放。\n\n" +
       "电视接力：Cloudflare 边缘函数不能直接搜索家庭局域网，暂需原版 N1 或本地助手。";

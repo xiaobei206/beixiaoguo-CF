@@ -1,7 +1,7 @@
 import "../../openhongguo-runtime.js";
 import { createClient, SearchFilter } from "openhongguo";
 
-const VERSION = "0.1.2";
+const VERSION = "0.1.3";
 const MAX_CLIENTS = 128;
 const MAX_PROFILES = 256;
 const clients = new Map();
@@ -142,6 +142,7 @@ function selectStream(result, requestedQuality) {
 }
 export async function onRequest(context) {
   const { request } = context;
+  const runtimeName = context.runtimeName || "Cloudflare Pages Functions";
   const url = new URL(request.url);
   const path = url.pathname.replace(/^\/api\/v1\/?/, "");
   const parts = path.split("/").filter(Boolean).map((part) => {
@@ -158,7 +159,7 @@ export async function onRequest(context) {
         await getClient(getSession(request));
         sdkState = "ready";
       }
-      return json({ status: "ok", version: VERSION, runtime: "Cloudflare Pages Functions", sdk: sdkState });
+      return json({ status: "ok", version: VERSION, runtime: runtimeName, sdk: sdkState });
     }
     if (parts[0] === "playback" && parts[1] === "activity") return json({ ok: true });
     if (parts[0] === "settings") {

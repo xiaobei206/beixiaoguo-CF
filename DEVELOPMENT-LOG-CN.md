@@ -1,5 +1,16 @@
 # 贝小果 Cloudflare 开发日志
 
+## 0.1.3 — 2026-11-27
+
+### 部署体验与封面显示
+- 新增中文 Cloudflare 部署教程，比较 Pages + GitHub、Pages Wrangler Direct Upload、控制台拖放和 Workers Builds。
+- 新增独立的 `worker.js` 与 `wrangler.worker.jsonc`，Worker 路线复用同一套 Pages API handler；静态资源通过 Workers Static Assets 提供。
+- 增加 Workers runtime smoke test，并把构建入口检查纳入 CI。
+- 修复封面 URL 过滤器：原逻辑只接受本地图片代理路径，导致 HTTPS 上游封面会被前端丢弃；现允许 HTTPS 外部封面并拒绝不安全协议及 URL 凭据。
+- 修正 Cloudflare 轻量版 UI 中“家庭局域网”文案、旧错误版本号和误导性的设置按钮文案。
+- KV 仍非必需依赖；匿名 SDK 状态暂存在内存，是否持久化待真实请求及冷启动测试后决定。
+
+
 ## 0.1.2 — 2026-11-27
 
 ### 预编译 WASM 模块

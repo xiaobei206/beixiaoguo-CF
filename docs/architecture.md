@@ -1,9 +1,9 @@
-# 贝小果 Cloudflare 版：架构与迁移计划
+# 贝小果 Cloudflare 版：架构与部署
 
 ## 目标
 
 - 保留原版原生 HTML / CSS / JavaScript UI。
-- 静态资源部署在 Cloudflare Pages。
+- 静态资源可部署在 Cloudflare Pages 或 Workers Static Assets。
 - 不运行常驻服务器；请求逻辑由 Pages Functions 按需执行。
 - 保持匿名，不增加账号系统或用户资料库。
 - 不把占位功能写成已完成。
@@ -13,7 +13,8 @@
 浏览器
   ├─ HTML / CSS / JavaScript / PWA
   └─ /api/v1/*
-       └─ Cloudflare Pages Functions
+       ├─ Cloudflare Pages Functions（wrangler.jsonc）
+       └─ Cloudflare Worker（worker.js + wrangler.worker.jsonc）
             └─ openhongguo Node.js/WASM SDK
                  └─ 红果上游接口
 
@@ -31,7 +32,7 @@ Pages Function 中使用 openhongguo 的 Node.js/WASM SDK，注入基于 Fetch �
 2. 电视接力：公共边缘函数无法直接对用户家庭 LAN 执行 mDNS 或原始 TCP；需要原版 N1 或可访问 LAN 的配套助手。
 3. 图片代理与磁盘缓存：轻量版直接使用上游封面地址，暂不提供 N1 的 RAM + 磁盘两级缓存及预热调度。
 4. 播放兼容性：取决于浏览器对 MP4/HLS、CDN Range/CORS 和编码的支持，应在 iOS Safari、Android Chrome 和桌面浏览器分别验收。
-5. SDK 环境兼容性：Wrangler Pages Functions 运行时烟雾测试已通过，确认 WASM 能在本地 Worker 运行环境初始化；真实上游接口仍需单独验收。
+5. SDK 环境兼容性：Pages Functions 运行时烟雾测试验证 WASM 可初始化；Workers 入口使用独立的 Wrangler 配置及运行时烟雾测试。真实上游接口仍需单独验收。
 
 ## Cloudflare Pages 配置
 
@@ -42,6 +43,10 @@ Pages Function 中使用 openhongguo 的 Node.js/WASM SDK，注入基于 Fetch �
 
 仓库根目录 functions/ 自动被 Pages 识别。wrangler.jsonc 用于本地 Functions 开发和兼容性设置。
 
+## Workers 部署目标
+
+`worker.js` 包装并复用同一份 `functions/api/v1/[[path]].js` API 实现；非 API 请求通过 `ASSETS` 绑定交给 Workers Static Assets。通过 `wrangler.worker.jsonc` 独立部署，不修改 Pages 的 `wrangler.jsonc`。在 Workers Builds 中应使用 `npm run build` 作为 Build command，并用 `npx --yes wrangler@latest deploy --config wrangler.worker.jsonc` 作为 Deploy command。
+
 ## 后续优先级
 
 1. CI 验证 Pages Function 打包、WASM 加载与 Worker 运行时。
@@ -49,3 +54,7 @@ Pages Function 中使用 openhongguo 的 Node.js/WASM SDK，注入基于 Fetch �
 3. 实现边缘媒体 Range 代理并评估迁移 CENC box/sample 解密逻辑。
 4. 优化封面图片格式回退和 HTTP 缓存。
 5. 保留电视接力给原版 N1，或设计本地 LAN 助手。
+
+## 部署教程
+
+Pages 与 Workers 的完整配置、GitHub 授权、ZIP／目录上传限制、CLI 命令及验收步骤见 [docs/deploy-cloudflare-cn.md](deploy-cloudflare-cn.md)。

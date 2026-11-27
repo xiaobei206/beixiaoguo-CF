@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 const required = [
   "public/index.html", "public/assets/app.js", "public/assets/app.css",
   "public/assets/icon-192.png", "public/assets/icon-512.png",
-  "public/manifest.webmanifest", "public/_routes.json", "functions/api/v1/[[path]].js", "functions/openhongguo-runtime.js", "scripts/patch-openhongguo.mjs", "wrangler.jsonc", "VERSION"
+  "public/manifest.webmanifest", "public/_routes.json", "functions/api/v1/[[path]].js", "functions/openhongguo-runtime.js", "scripts/patch-openhongguo.mjs", "wrangler.jsonc", "wrangler.worker.jsonc", "worker.js", "scripts/smoke-worker-runtime.mjs", "docs/deploy-cloudflare-cn.md", "VERSION"
 ];
 for (const file of required) await access(file);
 
@@ -17,15 +17,22 @@ const version = (await readFile("VERSION", "utf8")).trim();
 const packageInfo = JSON.parse(await readFile("package.json", "utf8"));
 const worker = await readFile("functions/api/v1/[[path]].js", "utf8");
 const wrangler = JSON.parse(await readFile("wrangler.jsonc", "utf8"));
+const workerWrangler = JSON.parse(await readFile("wrangler.worker.jsonc", "utf8"));
 if (packageInfo.version !== version) throw new Error("package.json version does not match VERSION");
 if (!worker.includes(`const VERSION = "${version}";`)) throw new Error("Functions version does not match VERSION");
-if (!wrangler.rules?.some(rule => rule.type === "CompiledWasm" && rule.globs?.includes("**/*.wasm"))) throw new Error("Wrangler must compile the SDK WASM as a precompiled module");
+if (!wrangler.rules?.some(rule => rule.type === "CompiledWasm" && rule.globs?.includes("**/*.wasm"))) throw new Error("Pages Wrangler config must compile the SDK WASM as a precompiled module");
+if (workerWrangler.name !== "beixiaoguo-cf-worker" || workerWrangler.main !== "./worker.js") throw new Error("Worker target must use the dedicated worker entry point and name");
+if (workerWrangler.assets?.directory !== "./public" || workerWrangler.assets?.binding !== "ASSETS" || !workerWrangler.assets?.run_worker_first?.includes("/api/*")) throw new Error("Workers target must serve public assets and route /api/* through the Worker");
+if (!workerWrangler.rules?.some(rule => rule.type === "CompiledWasm" && rule.globs?.includes("**/*.wasm"))) throw new Error("Workers Wrangler config must compile the SDK WASM as a precompiled module");
 if (!html.includes("/assets/app.js?v=" + version)) throw new Error("HTML JS version does not match VERSION");
 if (!html.includes("/assets/app.css?v=" + version)) throw new Error("HTML CSS version does not match VERSION");
+if (!html.includes("Cloudflare 边缘版") || html.includes("家庭局域网")) throw new Error("Cloudflare homepage must not describe the public edge deployment as LAN-only");
+if (!html.includes("贝小果 <b>" + version + "</b>")) throw new Error("Homepage footer version does not match VERSION");
 if (!manifest.name.includes("贝小果")) throw new Error("PWA manifest has an unexpected name");
 if (!js.includes("X-BXG-Session")) throw new Error("API calls must include anonymous session ID");
+if (!js.includes('parsed.protocol !== "https:"')) throw new Error("External cover images must be restricted to HTTPS URLs");
 
-for (const file of ["public/assets/app.js", "functions/api/v1/[[path]].js", "functions/openhongguo-runtime.js", "scripts/patch-openhongguo.mjs", "scripts/smoke-sdk.mjs", "scripts/smoke-pages-runtime.mjs"]) {
+for (const file of ["public/assets/app.js", "functions/api/v1/[[path]].js", "functions/openhongguo-runtime.js", "scripts/patch-openhongguo.mjs", "scripts/smoke-sdk.mjs", "scripts/smoke-pages-runtime.mjs", "worker.js", "scripts/smoke-worker-runtime.mjs"]) {
   const result = spawnSync(process.execPath, ["--check", file], { encoding: "utf8" });
   if (result.status !== 0) throw new Error("Syntax check failed: " + file + "\n" + result.stderr);
 }

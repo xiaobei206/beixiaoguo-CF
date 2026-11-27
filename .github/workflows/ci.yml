@@ -27,3 +27,7 @@ jobs:
         run: npx --yes wrangler@latest pages functions build --outdir .wrangler/functions-build
       - name: Pages Functions runtime smoke test (including WASM)
         run: node scripts/smoke-pages-runtime.mjs
+      - name: Build Cloudflare Workers bundle
+        run: npx --yes wrangler@latest deploy --dry-run --config wrangler.worker.jsonc
+      - name: Workers runtime smoke test (including WASM)
+        run: node scripts/smoke-worker-runtime.mjs
