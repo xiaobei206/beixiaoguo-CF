@@ -2,7 +2,7 @@
 
 贝小果的 Cloudflare 轻量化版本。静态网页可部署在 Cloudflare Pages 或 Workers Static Assets，匿名片库请求由边缘函数按需处理，不需要自管 VPS 或数据库。
 
-当前开发版本：0.1.12
+当前开发版本：0.1.13
 
 ## 开发原则
 
@@ -51,6 +51,12 @@
 
 - `MEDIA_SECRET_REQUIRED` 根据实际处理请求的运行时，分别提示 Cloudflare Pages 项目或 Cloudflare Worker 的配置入口。
 - 文档列出 Pages 与 Workers 各自的 Dashboard 和 Wrangler 设置方法，并强调各部署环境需要分别配置 Secret。
+
+## 0.1.13：浏览器自选 CF 入口 IP（需自定义域名）
+- 新增浏览器本地线路管理器：用户自行添加 IPv4／IPv6，端口固定 443；线路列表只保存在当前浏览器。
+- 通过 Cookie 将所选 IP 提供给 Cloudflare Response Header Transform Rules，由规则动态公告 Alt-Svc；Worker 诊断接口读取 Alt-Used，帮助确认浏览器是否使用备用入口。
+- Cloudflare 会过滤 Worker 直接返回的 Alt-Svc；workers.dev／pages.dev 默认域名无法配置 Zone Transform Rules。要启用自选入口，必须绑定自有橙云域名并按部署教程配置两条响应头规则。
+- Alt-Svc 仅影响后续新建连接，不强制迁移已建立连接；IP 必须支持原始站点域名的 TLS/SNI 与 HTTP/2。VLESS 可用本身不等于浏览器 HTTPS/HTTP/2 一定可用。
 
 ## 0.1.12：真实 CF 边缘媒体预热
 
