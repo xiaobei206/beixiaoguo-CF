@@ -13,7 +13,6 @@ const SDK_REF = process.env.BXG_OPENHONGGUO_REF?.trim() || "main";
 const GO_VERSION = "1.27.4";
 const GO_SHA256 = {
   x64: "7226736c2339719cda28fbf3a54d71aa63bcefe376e98cef00034268dab24840",
-  arm64: "3392582988a273a87ab5043ee8a273a87ab5043ee8a273a87ab5043ee8a273a87"
 };
 const ROOT = process.cwd();
 
@@ -62,7 +61,7 @@ async function installPinnedGo(workDir) {
   const checksum = GO_SHA256[process.arch];
   if (!checksum) throw new Error("暂不支持自动安装 Go 的架构：" + process.arch);
 
-  const goArch = process.arch === "arm64" ? "arm64" : "amd64";
+  const goArch = "amd64";
   const archiveName = "go" + GO_VERSION + ".linux-" + goArch + ".tar.gz";
   const archivePath = join(workDir, archiveName);
   const downloadUrl = "https://go.dev/dl/" + archiveName;

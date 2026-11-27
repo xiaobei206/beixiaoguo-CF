@@ -16,6 +16,7 @@ if (routes.version !== 1 || !routes.include?.includes("/api/*")) throw new Error
 const version = (await readFile("VERSION", "utf8")).trim();
 const packageInfo = JSON.parse(await readFile("package.json", "utf8"));
 const worker = await readFile("functions/api/v1/[[path]].js", "utf8");
+const workerRuntime = await readFile("functions/openhongguo-runtime.js", "utf8");
 const patcher = await readFile("scripts/patch-openhongguo.mjs", "utf8");
 const sdkSmoke = await readFile("scripts/smoke-sdk.mjs", "utf8");
 const workerSmoke = await readFile("scripts/smoke-worker-runtime.mjs", "utf8");
