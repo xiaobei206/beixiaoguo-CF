@@ -141,11 +141,11 @@
 
   function safeDebugMessage(value) {
     return String(value == null ? "" : value)
-      .replace(/https?:\\/\\/[^\\s"'<>]+/gi, (raw) => {
+      .replace(/https?:\/\/[^\s"'<>]+/gi, (raw) => {
         try { const u = new URL(raw); return u.origin + u.pathname; } catch (_) { return "[URL]"; }
       })
-      .replace(/(authorization|cookie|set-cookie|token|secret|password|session)(\\s*[:=]\\s*)[^\\s,;]+/gi, "$1$2[REDACTED]")
-      .replace(/([?&](?:token|sign|signature|device_id|session_id|auth)=)[^&\\s]+/gi, "$1[REDACTED]")
+      .replace(/(authorization|cookie|set-cookie|token|secret|password|session)(\s*[:=]\s*)[^\s,;]+/gi, "$1$2[REDACTED]")
+      .replace(/([?&](?:token|sign|signature|device_id|session_id|auth)=)[^&\s]+/gi, "$1[REDACTED]")
       .replace(/[A-Za-z0-9_-]{48,}/g, "[LONG_TOKEN]")
       .slice(0, 600);
   }
@@ -153,8 +153,8 @@
   function safeEndpoint(path) {
     try {
       return new URL(path, window.location.origin).pathname
-        .replace(/\\/series\\/[^/]+/g, "/series/:id")
-        .replace(/\\/play\\/[^/]+/g, "/play/:episodeId");
+        .replace(/\/series\/[^/]+/g, "/series/:id")
+        .replace(/\/play\/[^/]+/g, "/play/:episodeId");
     } catch (_) { return "[unknown endpoint]"; }
   }
 
@@ -184,8 +184,8 @@
       for (const item of items) {
         const value = String(item && (item.cover_url || item.coverUrl) || "");
         if (!value) empty++;
-        else if (/^https:\\/\\//i.test(value)) https++;
-        else if (/^http:\\/\\//i.test(value)) http++;
+        else if (/^https:\/\//i.test(value)) https++;
+        else if (/^http:\/\//i.test(value)) http++;
         else other++;
       }
       summary.items = items.length;
