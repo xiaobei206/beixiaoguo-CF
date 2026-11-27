@@ -19,6 +19,7 @@ const worker = await readFile("functions/api/v1/[[path]].js", "utf8");
 const workerRuntime = await readFile("functions/openhongguo-runtime.js", "utf8");
 const cencRuntime = await readFile("functions/cenc-runtime.js", "utf8");
 const cencSource = await readFile("edge-cenc/cenc/layout.go", "utf8");
+const cencWasmEntry = await readFile("edge-cenc/wasm/main.go", "utf8");
 const cencBuildWasm = await readFile("node_modules/openhongguo/dist/cenc.wasm");
 const mediaSession = await readFile("functions/media-session.js", "utf8");
 const mediaSessionTests = await readFile("scripts/test-media-session.mjs", "utf8");
@@ -54,6 +55,7 @@ if (!worker.includes('url.searchParams.get("sdk") === "probe" && context.env?.BX
 if (!patcher.includes("__BXG_OPENHONGGUO_GO") || !patcher.includes("Go runtime recovery") || !patcher.includes("Go runtime exit monitor")) throw new Error("Go/WASM runtime recovery and exit monitoring patch is missing");
 if (!worker.includes("sdkBuildDiagnostics()") || !workerRuntime.includes("bxg-build-info.js")) throw new Error("Cloudflare health diagnostics must identify the self-built SDK revision.");
 if (cencBuildWasm.byteLength < 100000 || !cencRuntime.includes("cenc.wasm") || !cencRuntime.includes("ensureCencRuntime")) throw new Error("CENC Go/WASM helper is missing or too small.");
+if (!cencRuntime.includes("__BXG_CENC_READY_CALLBACK") || !cencWasmEntry.includes("__BXG_CENC_READY_CALLBACK")) throw new Error("CENC runtime must wait for the Go/WASM API registration callback.");
 if (!cencSource.includes("func Open(") || !cencSource.includes("func (l *Layout) Decrypt(") || !sdkBuildScript.includes('["test", "./cenc"]')) throw new Error("CENC layout tests/build checks are missing.");
 if (!worker.includes('parts[0] === "media" && parts[1]') || !worker.includes("proxyProtectedMedia") || !worker.includes("sealMediaSession")) throw new Error("Protected playback must route through the edge Range proxy.");
 if (!mediaSession.includes("AES-GCM") || !mediaSession.includes("safeMediaSource") || !mediaSessionTests.includes("sealMediaSession")) throw new Error("Encrypted media token/security tests are missing.");

@@ -25,6 +25,9 @@ func main() {
 		"close": js.FuncOf(closeCENC),
 		"ping": js.FuncOf(func(js.Value, []js.Value) any { return true }),
 	}))
+	if ready := js.Global().Get("__BXG_CENC_READY_CALLBACK"); ready.Type() == js.TypeFunction {
+		ready.Invoke()
+	}
 	select {}
 }
 func openCENC(_ js.Value,args []js.Value) any {
