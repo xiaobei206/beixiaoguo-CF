@@ -10,6 +10,7 @@ for (const file of required) await access(file);
 
 const html = await readFile("public/index.html", "utf8");
 const js = await readFile("public/assets/app.js", "utf8");
+const styles = await readFile("public/assets/app.css", "utf8");
 if (js.includes("按需 Range 解密尚未迁移到边缘函数") || js.includes("受保护的 CENC 流暂不可播放")) throw new Error("播放器仍包含过时的 CENC 未迁移／不可播放提示。");
 if (!js.includes("当前后端返回了受保护标记，但没有返回边缘媒体地址")) throw new Error("播放器必须为缺少边缘媒体地址的旧后端提供明确部署诊断。");
 if (!js.includes("player.media.error") || !js.includes("player.media.stalled") || !js.includes("mediaElementDiagnostics(video)")) throw new Error("Browser media-state diagnostics are missing.");
@@ -18,7 +19,6 @@ if (!js.includes('const ROUTE_COOKIE_NAME = "bxg_alt_ip";') || !js.includes("nor
 if (!html.includes('id="route-dialog"') || !html.includes('id="route-button"') || !styles.includes(".route-option")) throw new Error("The browser route picker UI is missing.");
 const worker = await readFile("functions/api/v1/[[path]].js", "utf8");
 if (!worker.includes('parts[0] === "prefetch" && request.method === "POST"') || !worker.includes("episodeIds.length > 6") || !worker.includes("最多预解析 6 集")) throw new Error("Edge playback prefetch must be capped at six episodes.");
-const styles = await readFile("public/assets/app.css", "utf8");
 if (!styles.includes(".player-preload-container") || !styles.includes(".bxg-preload-video")) throw new Error("Offscreen browser preloading styles are missing.");
 const manifest = JSON.parse(await readFile("public/manifest.webmanifest", "utf8"));
 const routes = JSON.parse(await readFile("public/_routes.json", "utf8"));
