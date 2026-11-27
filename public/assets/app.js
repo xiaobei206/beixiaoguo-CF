@@ -74,10 +74,21 @@
   function safeImage(value) {
     const raw = String(value || "").trim();
     if (/^\/api\/v1\/images\/[a-f0-9]{32}$/i.test(raw)) return raw;
+    if (!raw) return "";
     try {
       const parsed = new URL(raw, window.location.origin);
-      if (parsed.protocol !== "https:" || parsed.username || parsed.password) return "";
-      if (parsed.origin === window.location.origin) return "";
+      if (parsed.protocol !== "https:") {
+        debugWrite("warn", "image.url.rejected", {reason:"non-https",protocol:parsed.protocol});
+        return "";
+      }
+      if (parsed.username || parsed.password) {
+        debugWrite("warn", "image.url.rejected", {reason:"url-credentials",host:parsed.hostname});
+        return "";
+      }
+      if (parsed.origin === window.location.origin) {
+        debugWrite("warn", "image.url.rejected", {reason:"same-origin-absolute",host:parsed.hostname});
+        return "";
+      }
       return parsed.href;
     } catch (_) {
       return "";
