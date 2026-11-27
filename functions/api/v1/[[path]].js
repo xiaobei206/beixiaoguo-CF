@@ -80,7 +80,7 @@ function json(data, status = 200, extraHeaders = {}) {
   });
 }
 function errorResponse(status, code, message) {
-  return json({ error: { code, message } }, status);
+  return json({ error: { code, message } }, status, { "X-BXG-Error-Code": code });
 }
 function trimMap(map, maxSize, onEvict) {
   while (map.size > maxSize) {
@@ -389,7 +389,7 @@ export async function onRequest(context) {
   try {
     if (request.method === "OPTIONS") return sendResponse(new Response(null, { status: 204 }));
     if (request.method !== "GET" && request.method !== "HEAD" && request.method !== "POST" && request.method !== "PUT" && request.method !== "DELETE") {
-      return errorResponse(405, "METHOD_NOT_ALLOWED", "不支持的请求方法");
+      return sendError(405, "METHOD_NOT_ALLOWED", "不支持的请求方法");
     }
     if (parts[0] === "debug" && parts[1] === "logs") {
       const session = getSession(request);
