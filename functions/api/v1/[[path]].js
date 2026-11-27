@@ -266,7 +266,7 @@ export async function onRequest(context) {
         await getClient(getSession(request));
         sdkState = "ready";
       }
-      if (url.searchParams.get("sdk") === "probe") {
+      if (url.searchParams.get("sdk") === "probe" && context.env?.BXG_SMOKE_TEST === "1") {
         let transportCalls = 0;
         const sentinel = "BXG_WORKER_WASM_PROBE";
         const probeClient = await createClient({
