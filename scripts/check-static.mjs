@@ -16,7 +16,7 @@ if (!js.includes("当前后端返回了受保护标记，但没有返回边缘�
 if (!js.includes("player.media.error") || !js.includes("player.media.stalled") || !js.includes("mediaElementDiagnostics(video)")) throw new Error("Browser media-state diagnostics are missing.");
 if (!js.includes("const EDGE_PREFETCH_COUNT = 6;") || !js.includes("const BROWSER_PRELOAD_COUNT = 3;")) throw new Error("Playback prefetch targets must remain six edge resolutions and three browser videos.");
 if (!js.includes("const MAX_ROUTE_ENTRIES = 24;") || !js.includes("normalizeRouteIPAddress") || !js.includes('/api/v1/route?alt_ip=') || !js.includes("Alt-Svc") || !js.includes(".workers.dev") || !js.includes(".pages.dev")) throw new Error("Browser-local CF IP route selection and platform limitations are missing.");
-if (!html.includes('id="route-dialog"') || !html.includes('id="route-button"') || !html.includes('http.request.uri.args["alt_ip"][0]') || !styles.includes(".route-option")) throw new Error("The browser route picker UI is missing.");
+if (!html.includes('id="route-dialog"') || !html.includes('id="route-button"') || !html.includes('http.response.headers["x-bxg-alt-ip"][0]') || !styles.includes(".route-option")) throw new Error("The browser route picker UI is missing.");
 const worker = await readFile("functions/api/v1/[[path]].js", "utf8");
 if (!worker.includes('parts[0] === "prefetch" && request.method === "POST"') || !worker.includes("episodeIds.length > 6") || !worker.includes("最多预解析 6 集")) throw new Error("Edge playback prefetch must be capped at six episodes.");
 if (!styles.includes(".player-preload-container") || !styles.includes(".bxg-preload-video")) throw new Error("Offscreen browser preloading styles are missing.");
@@ -28,7 +28,7 @@ if (!js.includes('const APP_VERSION = "' + version + '";')) throw new Error("DEB
 const packageInfo = JSON.parse(await readFile("package.json", "utf8"));
 if (worker.includes("Cloudflare Worker Secrets 中配置 BXG_MEDIA_SECRET")) throw new Error("Secret error still uses the generic Worker-only wording.");
 if (!worker.includes("mediaSecretSetupMessage(runtimeName)") || !worker.includes("Pages 和独立 Worker 的 Secrets 不会自动共享")) throw new Error("Secret error must explain runtime-specific setup and independent environments.");
-if (!worker.includes('parts[0] === "route"') || !worker.includes('request.headers.get("Alt-Used")') || !worker.includes("network.alt-used")) throw new Error("Route diagnostic endpoint must report the browser Alt-Used request header.");
+if (!worker.includes('parts[0] === "route"') || !worker.includes('request.headers.get("Alt-Used")') || !worker.includes("network.alt-used") || !worker.includes('"X-BXG-Alt-IP":selectedAltIp') || !worker.includes("normalizeRouteIPAddress")) throw new Error("Route endpoint must validate the selected IP and expose it to Zone response transforms.");
 if (!worker.includes("media.secret.missing")) throw new Error("Missing media Secret must produce a safe runtime diagnostic event.");
 if (!worker.includes("debugSession:session") || !worker.includes("media.cenc.stream.failed") || !worker.includes("media.cenc.stream.truncated")) throw new Error("Native video requests must retain correlated media-stream diagnostics.");
 if (!worker.includes("async function prewarmProtectedMedia(") || !worker.includes("await cache.put(key,response)") || !worker.includes("media.edge-cache.hit") || !worker.includes("media.edge-cache.ready")) throw new Error("Cloudflare must prewarm and serve decrypted media from its edge cache.");
