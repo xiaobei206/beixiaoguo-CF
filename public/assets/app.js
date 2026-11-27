@@ -525,7 +525,9 @@
     debugWrite("warn", "image.load.error", {
       proxyHost:imageHost, sourceHost:originalHost, retryCount:Number(image.dataset.retryCount) || 0
     });
-    if (!imageProbeStarted && /\\/api\\/v1\\/images\\?/i.test(image.currentSrc || image.src)) {
+    let imagePath = "";
+    try { imagePath = new URL(image.currentSrc || image.src, window.location.origin).pathname; } catch (_) {}
+    if (!imageProbeStarted && imagePath === "/api/v1/images") {
       imageProbeStarted = true;
       const probeUrl = image.currentSrc || image.src;
       fetch(probeUrl, {method:"HEAD",headers:{"X-BXG-Session":playbackClientId}})
