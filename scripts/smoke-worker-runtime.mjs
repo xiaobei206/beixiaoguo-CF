@@ -52,6 +52,22 @@ try {
   assert.equal(basicHealth.status, 200);
   assert.equal(basicBody.status, "ok");
   assert.equal(basicBody.runtime, "Cloudflare Workers");
+  const healthTraceId = basicHealth.headers.get("X-BXG-Trace-ID");
+  const healthTrace = basicHealth.headers.get("X-BXG-Debug");
+  assert.ok(healthTraceId, "API response did not expose a per-request trace ID");
+  assert.ok(healthTrace, "API response did not expose a per-request edge trace");
+  assert.equal(JSON.parse(decodeURIComponent(healthTrace)).traceId, healthTraceId);
+
+  const unsafeImageUrl = encodeURIComponent("http://127.0.0.1/private");
+  const imageReject = await fetchResponse(
+    "/api/v1/images?url=" + unsafeImageUrl,
+    2500,
+    "Worker image-proxy validation timed out.\\n" + output.slice(-12000)
+  );
+  const imageRejectBody = await imageReject.json();
+  assert.equal(imageReject.status, 400);
+  assert.equal(imageRejectBody.error.code, "IMAGE_URL_REJECTED");
+  assert.ok(imageReject.headers.get("X-BXG-Trace-ID"), "Image proxy rejection did not include a trace ID");
 
   const sdkResponse = await fetchResponse(
     "/api/v1/health?sdk=1",
