@@ -44,7 +44,7 @@
 - 至 `github.com`、`api.github.com`、`nodejs.org`、`registry.npmjs.org`、`api.cloudflare.com` 的 DNS 和 TCP 443 检查均成功。
 - 用户为了不污染 C 盘，把工具与项目放到 D 盘：
   - Node.js：`D:\tools\node\node-v22.23.5-win-x64`，版本 `v22.23.5`。
-  - Go：`D:\tools\go\go`，版本 `go1.27.4 windows/amd64)。
+  - Go：`D:\tools\go\go`，版本 `go1.27.4 windows/amd64`。
   - 便携版 MinGit：`D:\tools\git`，版本 `2.56.1.windows.1`。
   - 项目克隆位置：`D:\beixiaoguo-CF`，远程为 `https://github.com/qmancf206/beixiaoguo-CF.git`，分支 main。
   - npm 版本 `10.9.9`；`npm.cmd install --no-audit --no-fund` 已完成，输出 `added 79 packages in 1m`，只有 `node-domexception` deprecated 警告。
