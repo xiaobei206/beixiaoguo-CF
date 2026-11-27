@@ -140,7 +140,7 @@ function fetchTransport(session, debugContext) {
     } catch (error) {
       debugRecord(session, "error", "upstream.error", {
         target, durationMs: Date.now() - startedAt, message: sanitizeDebugMessage(error?.message || error)
-      }, trace);
+      }, debugContext?.trace);
       throw error;
     }
   };
