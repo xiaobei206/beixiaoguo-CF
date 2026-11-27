@@ -164,6 +164,12 @@ Wrangler 命令会交互式要求输入 Secret；Worker 的 `secret put` 会发�
 如果 Pages 和 Worker **都**显示缺失提示，请分别检查两个部署的设置，而不是只在其中一个地方添加。缺少 Secret 时，未受保护的直接视频仍可播放，受保护分集返回 `MEDIA_SECRET_REQUIRED`。当前支持渐进式 MP4 CENC AES-CTR；HLS/DASH 和其他 DRM 封装仍不支持。
 
 
+## 0.1.12 边缘媒体缓存
+
+部署 0.1.12 后，受保护分集会在 CF 侧预热后续最多 6 集：前 3 集在预读接口返回前写入完整媒体缓存，另外 3 集交给 `waitUntil` 后台执行。浏览器随后预载其中 3 集。每集不超过 32 MiB 才会整集缓存；更大的分集不预热，照常按需播放。缓存只按本次播放的加密媒体会话 URL 命中，最长不超过媒体会话剩余有效期。
+
+Worker 配置新增 `cache.enabled: true`，由 Wrangler 随部署启用，无需在 Dashboard 里再手工打开。Pages Functions 使用 Cloudflare Cache API。首次预热会从上游拉取完整受保护 MP4 并在 CF 内解密后缓存，之后的 Range 请求尽量由缓存直接返回。实际命中率会受到访问数据中心、缓存淘汰和媒体大小限制影响；可在 DEBUG 中查看 `media.edge-cache.ready`、`media.edge-cache.hit`、`media.edge-cache.skipped-size` 事件。
+
 ## 短剧连续播放预读
 
 从 0.1.11 起，播放时会由 Cloudflare 预解析后续最多 6 集的播放地址和短时媒体会话；浏览器同时预载当前集之后最多 3 集的视频。切集时将优先使用已预解析地址。Cloudflare 的 6 集预读不代表完整视频文件已下载到边缘节点；浏览器是否以及预载多少数据仍取决于浏览器策略、网络速度和媒体源 Range 响应。浏览器缓存使用 `private` 且不超过媒体会话的有效期，不会把个人播放会话写入公共共享缓存。
