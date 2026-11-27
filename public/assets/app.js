@@ -205,6 +205,17 @@
     try {
       const payload = JSON.parse(decodeURIComponent(raw));
       for (const event of payload.events || []) {
+        if (event.event === "sdk.client.ready" || event.event === "wasm.runtime.exited" || event.event === "wasm.call.after-exit") {
+          const runtime = event.runtime && typeof event.runtime === "object" ? event.runtime : event;
+          serverDebugRuntime = {
+            initialized:!!runtime.initialized,
+            exited:!!runtime.exited,
+            generation:Number(runtime.generation) || 0,
+            startedAt:runtime.startedAt || null,
+            exitedAt:runtime.exitedAt || null,
+            error:runtime.error || ""
+          };
+        }
         const detail = Object.assign({}, event);
         delete detail.time;
         delete detail.level;
@@ -287,7 +298,9 @@
     try {
       const data = await request("/api/v1/debug/logs?limit=240");
       serverDebugEntries = Array.isArray(data.events) ? data.events : [];
-      serverDebugRuntime = data.runtime || null;
+      if (!serverDebugRuntime || data.runtime?.initialized || data.runtime?.exited) {
+        serverDebugRuntime = data.runtime || serverDebugRuntime;
+      }
       debugWrite("info", "debug.server.refresh", {serverEntries:serverDebugEntries.length});
     } catch (error) {
       debugWrite("error", "debug.server.refresh.failed", {message:error.message || error});
@@ -519,7 +532,9 @@
         .then((response) => {
           captureEdgeTrace(response);
           debugWrite(response.ok ? "info" : "error", "image.proxy.head-probe", {
-            status:response.status, contentType:response.headers.get("Content-Type") || ""
+            status:response.status,
+            code:response.headers.get("X-BXG-Error-Code") || "",
+            contentType:response.headers.get("Content-Type") || ""
           });
         })
         .catch((error) => debugWrite("error", "image.proxy.head-probe.failed", {message:error.message || error}));
