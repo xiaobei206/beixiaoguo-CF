@@ -20,7 +20,7 @@ try {
     }
     await delay(500);
     try {
-      const response = await fetch(base + "/api/v1/health?sdk=1");
+      const response = await fetch(base + "/api/v1/health?sdk=1", { signal: AbortSignal.timeout(3000) });
       const body = await response.json();
       if (!response.ok) {
         throw new Error("Health endpoint returned HTTP " + response.status + ": " + JSON.stringify(body) + "\n" + output.slice(-12000));
@@ -29,6 +29,7 @@ try {
       break;
     } catch (error) {
       if (String(error.message || error).includes("Health endpoint returned")) throw error;
+      if (error && error.name === "TimeoutError") throw new Error("Pages Function health request timed out while initializing WASM.\n" + output.slice(-12000));
     }
   }
   if (!result) throw new Error("Pages Functions did not become ready.\n" + output.slice(-12000));
