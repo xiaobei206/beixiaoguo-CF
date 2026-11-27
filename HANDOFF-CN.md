@@ -1,8 +1,8 @@
 # 贝小果 Cloudflare 交接索引
 
-## 当前排障交接（2026-11-27；新对话请先读）
+## 当前排障交接（2026-11-28；新对话请先读）
 
-> **当前主线任务：修复独立 Cloudflare Worker 在受保护播放时读不到 `BXG_MEDIA_SECRET`，并以真实播放成功作为验收。** 不要重新从头排查，不要继续让用户反复 Rotate。
+> **当前仅剩主线：在实际运行的 Cloudflare Worker 上通过 Wrangler 部署 `BXG_MEDIA_SECRET`，然后以真实受保护视频播放成功作为验收。** Windows／Linux 项目测试已通过；不要重复此前的 Secret Rotate／Retry build 排查。
 
 ### 1. 已证实的故障现象
 
@@ -27,8 +27,8 @@
 
 ### 2. 仓库与代码状态
 
-- 维护仓库：`xiaobei206/beixiaoguo-CF`，当前 main 为 `fcea543d5762176ff52cfc4927b61c9289561643`。
-- 部署 fork：`qmancf206/beixiaoguo-CF`。最近检查时其 main 与维护仓库都在该 `fcea543d...` commit；用户的 Windows VPS 正是从这个 fork 克隆项目。
+- 维护仓库：`xiaobei206/beixiaoguo-CF`，当前 main 为 `6f9bfeed24aad316a4d78363d30b779685da3d46`。
+- 部署 fork：`qmancf206/beixiaoguo-CF`，main 仍为 `fcea543d5762176ff52cfc4927b61c9289561643`。维护仓库相对 fork 快进领先 4 个提交；本轮**没有**修改或推送部署 fork。VPS 的本地工作副本可以从维护仓库快进更新，不需要向 fork 推送。
 - Wrangler Worker 配置：`wrangler.worker.jsonc`；Worker 名称 `beixiaoguo-cf-worker`，入口 `worker.js`。
 - `worker.js` 会把 Worker 的 `env` 原样传给 `functions/api/v1/[[path]].js`。播放逻辑读取 `context.env?.BXG_MEDIA_SECRET`；名称与调用代码一致。现有配置文件未声明同名普通变量。
 - 0.1.14 补上了直接播放分支的诊断事件 `media.secret.missing`，仅记录 bool 状态，不记录密钥值。部署提交链接：
@@ -50,14 +50,23 @@
   - npm 版本 `10.9.9`；`npm.cmd install --no-audit --no-fund` 已完成，输出 `added 79 packages in 1m`，只有 `node-domexception` deprecated 警告。
   - 因 MinGit 缺少 `less`，普通 `git log` 会报 pager 错误；使用 `git --no-pager log ...` 或设置 `$env:GIT_PAGER='cat'`。
   - 环境变量曾在当前 PowerShell 会话中设置，包含 D 盘 TEMP/npm/Go cache 路径；新开终端时须重新设置。
-- **截至本交接时，用户尚未提供 `npm.cmd test` 的执行结果。** 下一步先跑测试，而不是继续装工具或重新克隆。
+- 用户已提供 Windows VPS 首次 `npm.cmd test` 失败日志。已定位并修复：Windows 文件权限测试错误地断言 POSIX `0600`；生成文件比较没有归一化 CRLF/LF；POSIX Shell 假播放器测试不能在 Windows 执行；`scripts/patch-openhongguo.mjs` 对 SDK 文件的精确字符串匹配未处理 CRLF。
+- 修复已在用户自有 `xiaobei206/openhongguo` 的 main（SDK commit `dc453a4691f2d7e29b4c07c3385fab0bf00016e1`）与维护仓库 `xiaobei206/beixiaoguo-CF` 的 main（`6f9bfeed24aad316a4d78363d30b779685da3d46`）。Windows 上只跳过依赖 POSIX Shell 的模拟子进程测试；同一测试仍在 Linux CI 完整执行。其余 Go 单测、CENC 测试、WASM 构建和项目 smoke tests 均保留。
+- GitHub Actions Run #162（`https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46043726448`）已成功：`windows-latest` 的 `npm test` 通过；Ubuntu 的 `npm test`、Pages Functions 构建与 WASM smoke test、Workers 构建与 WASM smoke test 全部通过。
+- 这证明修复后的项目在 GitHub Windows Runner 和 Linux Runner 上通过；**用户自己的 Windows VPS 尚未在更新到维护仓库 main 后重新执行**。本轮没有远程登录 VPS，也没有部署或轮换生产 Secret。
 
 ### 4. Windows VPS 下一条命令
 
-在 PowerShell 中进入项目目录后（工具文件已安装，依赖已安装），执行：
+在 PowerShell 中进入 VPS 的本地工作副本。先确认没有未提交改动，再从维护仓库 `main` 快进更新本地目录。此操作**只更新 VPS 本地工作副本，不会推送或同步 `qmancf206` 部署 fork**：
 
 ```powershell
 Set-Location D:\beixiaoguo-CF
+if (git status --porcelain) { throw '工作区有未提交改动；先保存，不要覆盖' }
+git fetch https://github.com/xiaobei206/beixiaoguo-CF.git main
+if ($LASTEXITCODE -ne 0) { throw 'fetch 维护仓库 main 失败' }
+git merge --ff-only FETCH_HEAD
+if ($LASTEXITCODE -ne 0) { throw '本地快进失败；停止，不要强制合并或推送部署 fork' }
+
 $env:Path='D:\tools\node\node-v22.23.5-win-x64;D:\tools\go\go\bin;D:\tools\git\cmd;D:\tools\git\ucrt64\bin;D:\tools\git\usr\bin;'+$env:Path
 $env:TEMP='D:\bxg-temp'
 $env:TMP='D:\bxg-temp'
@@ -70,7 +79,7 @@ $env:GIT_PAGER='cat'
 npm.cmd test
 ```
 
-如测试失败，先修复第一个真实 Error；不要升级 npm（当前 10.9.9 足够），不要重装 Node/Go/Git，不要重新克隆，不要把整份长日志都复制出来。
+维护仓库 main 的 Windows 与 Linux CI 均已通过。VPS 本地快进到维护仓库 main 后，重新执行一次 `npm.cmd test`，确认用户机器也通过。不要升级 npm（10.9.9 足够）、重装 Node/Go/Git、重新克隆或把整份长日志复制出来；若失败，只需提供最后一个真实错误及其前后约 30 行。
 
 ### 5. 测试通过后的部署计划
 
