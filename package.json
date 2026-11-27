@@ -1,6 +1,6 @@
 {
   "name": "beixiaoguo-cf",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "private": true,
   "type": "module",
   "description": "贝小果 Cloudflare Pages / Workers 轻量版",
