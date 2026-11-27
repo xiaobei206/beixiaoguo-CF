@@ -51,6 +51,12 @@ Pages Function 中使用 openhongguo 的 Node.js/WASM SDK，注入基于 Fetch �
 
 `worker.js` 包装并复用同一份 `functions/api/v1/[[path]].js` API 实现；非 API 请求通过 `ASSETS` 绑定交给 Workers Static Assets。通过 `wrangler.worker.jsonc` 独立部署，不修改 Pages 的 `wrangler.jsonc`。在 Workers Builds 中应使用 `npm run build` 作为 Build command，并用 `npx --yes wrangler@latest deploy --config wrangler.worker.jsonc` 作为 Deploy command。
 
+## Cloudflare 边缘媒体预热（0.1.12）
+
+CF 侧的 6 集预读现在不止解析播放地址：对后续 6 集受保护 MP4，后台先用 HEAD 确认媒体长度；不超过 32 MiB 的分集再通过现有 CENC 解密管线读取完整媒体，并以 200 响应写入 Cloudflare Cache API。前 3 集在预读 API 返回前完成边缘缓存，后 3 集通过 `waitUntil` 填充。浏览器随后启动 3 个隐藏 video 预载，Range 请求优先命中完整媒体缓存并由 Cache API 切片为 206。缓存键是本次播放的加密媒体 URL，TTL 不超过会话到期时间，不把内容密钥暴露给缓存键以外的客户端数据。超过 32 MiB 的分集不做整集预热，仍走原有按需 Range 回源与 CENC 解密。
+
+Workers 入口同时启用 Workers Cache，使完整 200 媒体响应还能进入 Worker 自身缓存；Pages Functions 使用 `caches.default`。Cache API 是数据中心本地缓存，未命中时自动回源，因此跨数据中心不保证复用同一份预热对象。
+
 ## 双层播放预读（0.1.11）
 
 播放当前集后，前端调用 `/api/v1/prefetch`，让 Cloudflare Worker/Pages Functions 顺序预解析后续最多 6 集的播放地址；受保护 CENC 分集同时生成短时加密媒体会话。切集时优先消费已预解析会话，预读窗口随播放进度向前补齐。浏览器端只为当前集之后最多 3 集创建隐藏的 `video preload=auto` 元素，利用同源媒体地址和短时 `private` Range 缓存尽量复用已获取的数据。浏览器可能忽略 preload 提示，因此它不等价于保证三集完整下载。Cloudflare 端的 6 集是播放地址／会话预解析，不是把六集完整媒体文件预存到边缘缓存。
