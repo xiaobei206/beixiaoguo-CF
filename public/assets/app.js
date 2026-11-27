@@ -232,6 +232,7 @@
       captureEdgeTrace(response);
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.ok) throw new Error(payload.error?.message || ("HTTP " + response.status));
+      if (payload.selectedAltIp !== routeValue) throw new Error("Cloudflare Worker 返回的线路地址与选择不一致");
       const altSvc = response.headers.get("Alt-Svc") || "";
       const altUsed = String(payload.altUsed || "");
       const authority = ip ? routeAuthority(ip) + ":443" : "";
@@ -313,24 +314,28 @@
     const guide = [
       "Cloudflare → Rules → Transform Rules → Response Header Transform Rules",
       "规则 1（IPv4）",
-      '(http.host eq "YOUR_HOSTNAME" and http.request.uri.path eq "/api/v1/route" and len(http.request.uri.args["alt_ip"][0]) gt 0 and http.request.uri.args["alt_ip"][0] ne "auto" and not (http.request.uri.args["alt_ip"][0] contains ":"))',
+      '(http.host eq "YOUR_HOSTNAME" and http.request.uri.path eq "/api/v1/route" and len(http.response.headers["x-bxg-alt-ip"][0]) gt 0 and http.response.headers["x-bxg-alt-ip"][0] ne "auto" and not (http.response.headers["x-bxg-alt-ip"][0] contains ":"))',
       "响应头：Alt-Svc；操作：Set dynamic",
-      '值：concat("h2=\\\"", http.request.uri.args["alt_ip"][0], ":443\\\"; ma=300")',
+      '值：concat("h2=\\\"", http.response.headers["x-bxg-alt-ip"][0], ":443\\\"; ma=300")',
       "",
       "规则 2（IPv6）",
-      '(http.host eq "YOUR_HOSTNAME" and http.request.uri.path eq "/api/v1/route" and http.request.uri.args["alt_ip"][0] contains ":")',
+      '(http.host eq "YOUR_HOSTNAME" and http.request.uri.path eq "/api/v1/route" and http.response.headers["x-bxg-alt-ip"][0] contains ":")',
       "响应头：Alt-Svc；操作：Set dynamic",
-      '值：concat("h2=\\\"[", http.request.uri.args["alt_ip"][0], "]:443\\\"; ma=300")',
+      '值：concat("h2=\\\"[", http.response.headers["x-bxg-alt-ip"][0], "]:443\\\"; ma=300")',
       "",
-      "规则 3（默认线路）",
-      '(http.host eq "YOUR_HOSTNAME" and http.request.uri.path eq "/api/v1/route" and http.request.uri.args["alt_ip"][0] eq "auto")',
+      "规则 3（恢复默认线路）",
+      '(http.host eq "YOUR_HOSTNAME" and http.request.uri.path eq "/api/v1/route" and http.response.headers["x-bxg-alt-ip"][0] eq "auto")',
       "响应头：Alt-Svc；操作：Set static；值：clear",
       "",
-      "将 YOUR_HOSTNAME 替换为自定义橙云域名。此方案使用 URI 查询参数，不依赖 Pro 版 http.request.cookies 字段；workers.dev/pages.dev 不能使用 Zone Transform Rules。"
+      "规则 4（清理内部响应头）",
+      '(http.host eq "YOUR_HOSTNAME" and http.request.uri.path eq "/api/v1/route")',
+      "响应头：X-BXG-Alt-IP；操作：Remove",
+      "",
+      "将 YOUR_HOSTNAME 替换为自定义橙云域名。规则从 Worker 已验证的响应头取值，不直接反射未经验证的 URL 参数；workers.dev/pages.dev 不能使用 Zone Transform Rules。"
     ].join("\n");
     try {
       await navigator.clipboard.writeText(guide);
-      showToast("三条 Cloudflare 规则说明已复制");
+      showToast("四条 Cloudflare 规则说明已复制");
     } catch (_) {
       const field = document.createElement("textarea");
       field.value = guide;
@@ -338,7 +343,7 @@
       field.style.opacity = "0";
       document.body.appendChild(field);
       field.select();
-      try { document.execCommand("copy"); showToast("三条 Cloudflare 规则说明已复制"); }
+      try { document.execCommand("copy"); showToast("四条 Cloudflare 规则说明已复制"); }
       catch (_) { showToast("复制失败，请展开规则说明手动复制"); }
       field.remove();
     }
