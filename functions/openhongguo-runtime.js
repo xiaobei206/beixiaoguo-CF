@@ -1,3 +1,4 @@
+import { openhongguoBuild } from "../node_modules/openhongguo/bxg-build-info.js";
 import "../node_modules/openhongguo/dist/wasm_exec.js";
 import wasmModule from "../node_modules/openhongguo/dist/openhongguo.wasm";
 
@@ -9,4 +10,5 @@ if (typeof globalThis.Go !== "function") {
 if (!(wasmModule instanceof WebAssembly.Module)) {
   throw new Error("openhongguo: Cloudflare did not load the Wasm as a precompiled module");
 }
+globalThis.__BXG_OPENHONGGUO_BUILD = openhongguoBuild;
 globalThis.__BXG_OPENHONGGUO_WASM = wasmModule;

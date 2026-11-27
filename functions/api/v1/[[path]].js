@@ -51,10 +51,25 @@ function debugRecord(session, level, event, detail = {}, trace = null) {
   debugLogs.set(session, bucket);
   while (debugLogs.size > MAX_DEBUG_SESSIONS) debugLogs.delete(debugLogs.keys().next().value);
 }
+function sdkBuildDiagnostics() {
+  const build = globalThis.__BXG_OPENHONGGUO_BUILD || {};
+  return {
+    repository: build.repository || null,
+    ref: build.ref || null,
+    commit: build.commit || null,
+    goVersion: build.goVersion || null,
+    packageVersion: build.packageVersion || null,
+    playbackFallback: build.playbackFallback || null,
+    deviceActivation: build.deviceActivation === true,
+    deviceHeartbeat: build.deviceHeartbeat === true,
+    serverIssuedEGDI: build.serverIssuedEGDI === true,
+  };
+}
 function runtimeDiagnostics() {
   const go = globalThis.__BXG_OPENHONGGUO_GO;
   const state = globalThis.__BXG_OPENHONGGUO_STATE || {};
   return {
+    sdkBuild: sdkBuildDiagnostics(),
     initialized: !!globalThis.__openhongguo,
     exited: !!go?.exited || !!state.exited,
     generation: Number(state.generation || globalThis.__BXG_OPENHONGGUO_GENERATION) || 0,
@@ -455,9 +470,9 @@ export async function onRequest(context) {
         }
         if (transportCalls < 2) throw new Error("WASM probe did not reach the JavaScript transport twice");
         sdkState = "ready";
-        return sendJson({ status: "ok", version: VERSION, runtime: runtimeName, sdk: sdkState, goCallbacks: "ok", transportCalls, wasm: runtimeDiagnostics() });
+        return sendJson({ status: "ok", version: VERSION, runtime: runtimeName, sdk: sdkState, sdkBuild: sdkBuildDiagnostics(), goCallbacks: "ok", transportCalls, wasm: runtimeDiagnostics() });
       }
-      return sendJson({ status: "ok", version: VERSION, runtime: runtimeName, sdk: sdkState });
+      return sendJson({ status: "ok", version: VERSION, runtime: runtimeName, sdk: sdkState, sdkBuild: sdkBuildDiagnostics() });
     }
     if (parts[0] === "playback" && parts[1] === "activity") return sendJson({ ok: true });
     if (parts[0] === "settings") {

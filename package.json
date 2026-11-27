@@ -5,13 +5,10 @@
   "type": "module",
   "description": "贝小果 Cloudflare Pages / Workers 轻量版",
   "scripts": {
-    "prebuild": "node scripts/patch-openhongguo.mjs",
+    "prebuild": "node scripts/build-openhongguo.mjs && node scripts/patch-openhongguo.mjs",
     "build": "node scripts/check-static.mjs",
-    "pretest": "node scripts/patch-openhongguo.mjs",
+    "pretest": "node scripts/build-openhongguo.mjs && node scripts/patch-openhongguo.mjs",
     "test": "node scripts/check-static.mjs && node scripts/smoke-sdk.mjs"
-  },
-  "dependencies": {
-    "openhongguo": "0.4.0"
   },
   "devDependencies": {
     "wrangler": "4.168.0"

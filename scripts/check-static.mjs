@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 const required = [
   "public/index.html", "public/assets/app.js", "public/assets/app.css",
   "public/assets/icon-192.png", "public/assets/icon-512.png",
-  "public/manifest.webmanifest", "public/_routes.json", "functions/api/v1/[[path]].js", "functions/openhongguo-runtime.js", "scripts/patch-openhongguo.mjs", "wrangler.jsonc", "wrangler.worker.jsonc", "worker.js", "scripts/smoke-worker-runtime.mjs", "docs/deploy-cloudflare-cn.md", "VERSION"
+  "public/manifest.webmanifest", "public/_routes.json", "functions/api/v1/[[path]].js", "functions/openhongguo-runtime.js", "scripts/patch-openhongguo.mjs", "scripts/build-openhongguo.mjs", "wrangler.jsonc", "wrangler.worker.jsonc", "worker.js", "scripts/smoke-worker-runtime.mjs", "docs/deploy-cloudflare-cn.md", "VERSION"
 ];
 for (const file of required) await access(file);
 
@@ -19,9 +19,14 @@ const worker = await readFile("functions/api/v1/[[path]].js", "utf8");
 const patcher = await readFile("scripts/patch-openhongguo.mjs", "utf8");
 const sdkSmoke = await readFile("scripts/smoke-sdk.mjs", "utf8");
 const workerSmoke = await readFile("scripts/smoke-worker-runtime.mjs", "utf8");
+const sdkBuildScript = await readFile("scripts/build-openhongguo.mjs", "utf8");
+const sdkBuildInfo = await readFile("node_modules/openhongguo/bxg-build-info.js", "utf8");
 const wrangler = JSON.parse(await readFile("wrangler.jsonc", "utf8"));
 const workerWrangler = JSON.parse(await readFile("wrangler.worker.jsonc", "utf8"));
 if (packageInfo.version !== version) throw new Error("package.json version does not match VERSION");
+if (packageInfo.dependencies?.openhongguo) throw new Error("Do not install the stale npm openhongguo WASM package; build xiaobei206/openhongguo directly.");
+if (!sdkBuildScript.includes("xiaobei206/openhongguo.git") || !sdkBuildScript.includes("GO_SHA256") || !sdkBuildScript.includes("go test")) throw new Error("Build must fetch, verify and test the self-owned openhongguo source.");
+if (!sdkBuildInfo.includes('"repository":"xiaobei206/openhongguo"') || !sdkBuildInfo.includes('"playbackFallback":"video_tab"') || !sdkBuildInfo.includes('"deviceHeartbeat":true')) throw new Error("Packaged WASM was not built from the self-owned playback SDK.");
 if (!worker.includes(`const VERSION = "${version}";`)) throw new Error("Functions version does not match VERSION");
 if (wrangler.rules !== undefined) throw new Error("Pages Wrangler config must not contain the Workers-only rules field; Pages imports WASM modules directly");
 if (!wrangler.pages_build_output_dir || wrangler.main !== undefined) throw new Error("wrangler.jsonc must remain a Pages-only configuration");
@@ -41,6 +46,7 @@ if (!worker.includes('async function proxyCoverImage') || !worker.includes('host
 if (!js.includes('proxy.searchParams.set("url", parsed.href)') || !js.includes('captureEdgeTrace(response)')) throw new Error("Frontend must proxy FQ Novel posters and collect per-request edge traces");
 if (!worker.includes('url.searchParams.get("sdk") === "probe" && context.env?.BXG_SMOKE_TEST === "1"')) throw new Error("The network-free WASM probe must remain gated to local smoke tests");
 if (!patcher.includes("__BXG_OPENHONGGUO_GO") || !patcher.includes("Go runtime recovery") || !patcher.includes("Go runtime exit monitor")) throw new Error("Go/WASM runtime recovery and exit monitoring patch is missing");
+if (!worker.includes("sdkBuildDiagnostics()") || !workerRuntime.includes("bxg-build-info.js")) throw new Error("Cloudflare health diagnostics must identify the self-built SDK revision.");
 if (!sdkSmoke.includes("client.discover") || !sdkSmoke.includes("twice") || !workerSmoke.includes("sdk=probe") || !workerSmoke.includes("goCallbacks")) throw new Error("CI must exercise repeated Go-to-JavaScript calls, not only SDK initialization");
 if (!html.includes("贝小果 <b>" + version + "</b>")) throw new Error("HTML footer version does not match VERSION");
 if (!manifest.name.includes("贝小果")) throw new Error("PWA manifest has an unexpected name");
@@ -49,7 +55,7 @@ if (!js.includes('parsed.protocol !== "https:"')) throw new Error("External cove
 if (js.includes("视频仍由 N1 按需读取与解密") || js.includes("N1 正在按需解密") || js.includes("明文 MP4")) throw new Error("Cloudflare playback UI contains stale N1-only wording");
 if (!js.includes("无需创建 KV")) throw new Error("Cloudflare runtime guide should state that KV is not required");
 
-for (const file of ["public/assets/app.js", "functions/api/v1/[[path]].js", "functions/openhongguo-runtime.js", "scripts/patch-openhongguo.mjs", "scripts/smoke-sdk.mjs", "scripts/smoke-pages-runtime.mjs", "worker.js", "scripts/smoke-worker-runtime.mjs"]) {
+for (const file of ["scripts/build-openhongguo.mjs", "public/assets/app.js", "functions/api/v1/[[path]].js", "functions/openhongguo-runtime.js", "scripts/patch-openhongguo.mjs", "scripts/smoke-sdk.mjs", "scripts/smoke-pages-runtime.mjs", "worker.js", "scripts/smoke-worker-runtime.mjs"]) {
   const result = spawnSync(process.execPath, ["--check", file], { encoding: "utf8" });
   if (result.status !== 0) throw new Error("Syntax check failed: " + file + "\n" + result.stderr);
 }

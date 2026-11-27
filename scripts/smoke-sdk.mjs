@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
 import { createClient, memoryProfileStore } from "openhongguo";
+import { openhongguoBuild } from "../node_modules/openhongguo/bxg-build-info.js";
+
+assert.equal(openhongguoBuild.repository, "xiaobei206/openhongguo");
+assert.match(openhongguoBuild.commit, /^[a-f0-9]{40}$/);
+assert.equal(openhongguoBuild.playbackFallback, "video_tab");
+assert.equal(openhongguoBuild.deviceActivation, true);
+assert.equal(openhongguoBuild.deviceHeartbeat, true);
+assert.equal(openhongguoBuild.serverIssuedEGDI, true);
 
 let transportCalls = 0;
 const transport = async () => {
@@ -30,4 +38,5 @@ for (let i = 0; i < 2; i++) {
   assert.ok(transportCalls >= i + 1, "SDK did not invoke the mock JavaScript transport on call " + (i + 1));
 }
 assert.ok(transportCalls >= 2, "SDK did not invoke the mock JavaScript transport twice");
+console.log("openhongguo 自有源码构建通过：" + openhongguoBuild.commit + "；video_tab / 设备激活 / EGDI 元数据已验证。");
 console.log("openhongguo WASM 连续调用测试通过：同一 Go runtime 完成两次 JS transport 回调。");
