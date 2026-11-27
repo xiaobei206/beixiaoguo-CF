@@ -1,5 +1,93 @@
 # 贝小果 Cloudflare 交接索引
 
+## 当前排障交接（2026-11-27；新对话请先读）
+
+> **当前主线任务：修复独立 Cloudflare Worker 在受保护播放时读不到 `BXG_MEDIA_SECRET`，并以真实播放成功作为验收。** 不要重新从头排查，不要继续让用户反复 Rotate。
+
+### 1. 已证实的故障现象
+
+- 生产地址：`https://w.hiu.us.kg/`。
+- Worker：`beixiaoguo-cf-worker`，生产环境 Production；Cloudflare Domains 页面显示自定义域 `w.hiu.us.kg` 绑定到了该 Worker。
+- 用户在该 Worker 的 Settings → Variables and Secrets 中确认：类型为 `Secret`、名称为 `BXG_MEDIA_SECRET`、环境为 Production。
+- 播放接口 `GET /api/v1/play/:episodeId` 仍返回 HTTP 503 / `MEDIA_SECRET_REQUIRED`。
+- 最新用户 DEBUG 样本（2026-11-27 15:55 UTC 左右）包含：
+  ```json
+  {
+    "runtime": "Cloudflare Workers",
+    "host": "w.hiu.us.kg",
+    "secretBound": false,
+    "secretLengthValid": false
+  }
+  ```
+  这说明当前请求执行时的 `env.BXG_MEDIA_SECRET` 不是字符串；`secretLengthValid:false` 是同一检查的结果，不应误判为仅仅密钥太短。
+- 同一调试包中 SDK 初始化正常，推荐、详情、上游播放信息请求均返回 200；故障发生在本项目生成受保护媒体会话前，不是上游播放 API 或 CENC 解密阶段。
+- 上一轮让用户尝试从 Dashboard Rotate 并保存 Secret；Dashboard 没显示 Deploy 按钮，随后又尝试按部署历史菜单 Retry build，但新构建后提供的 DEBUG 仍为 `secretBound:false`。最新 Active Deployment ID 在最近一次新测试之后尚未重新核实。
+- 上次用户分享的 Deployment 页面显示 Active Deployment `3dce3a88`，commit 为 `fcea543d5762176ff52cfc4927b61c9289561643`，message 为 `fix(media): diagnose Worker media secret in direct playback (0.1.14)`，Source=Build / main / Ready，时间为 2026-11-27 14:59:23 UTC。不要假定 Retry build 一定让 secret 绑定生效。
+- 之前在聊天中生成过一串 64 位密钥并建议用户输入 Dashboard。该值曾在聊天中明文出现；最终配置时请使用本机重新生成的强随机值，通过 Wrangler 的交互提示直接输入，绝不要再把密钥放入 Git、调试包或聊天中。
+
+### 2. 仓库与代码状态
+
+- 维护仓库：`xiaobei206/beixiaoguo-CF`，当前 main 为 `fcea543d5762176ff52cfc4927b61c9289561643`。
+- 部署 fork：`qmancf206/beixiaoguo-CF`。最近检查时其 main 与维护仓库都在该 `fcea543d...` commit；用户的 Windows VPS 正是从这个 fork 克隆项目。
+- Wrangler Worker 配置：`wrangler.worker.jsonc`；Worker 名称 `beixiaoguo-cf-worker`，入口 `worker.js`。
+- `worker.js` 会把 Worker 的 `env` 原样传给 `functions/api/v1/[[path]].js`。播放逻辑读取 `context.env?.BXG_MEDIA_SECRET`；名称与调用代码一致。现有配置文件未声明同名普通变量。
+- 0.1.14 补上了直接播放分支的诊断事件 `media.secret.missing`，仅记录 bool 状态，不记录密钥值。部署提交链接：
+  `https://github.com/qmancf206/beixiaoguo-CF/commit/fcea543d5762176ff52cfc4927b61c9289561643`
+- 维护仓库当前对部署 fork 没有写权限；若需同步文档/代码改动，先推送到维护仓库，再由用户 Sync fork。单纯写交接记录不应更改业务代码。
+
+### 3. 用户 Windows VPS 环境（已实测）
+
+- OS：Windows 10 IoT Enterprise LTSC，版本 10.0.19044，64-bit。
+- CPU：4 个逻辑处理器，AMD EPYC-Rome Processor。
+- RAM：8 GiB；当时可用约 4.44 GiB。
+- 磁盘：C: 总 49.4 GiB / 剩余 9.2 GiB；D: 总 10.6 GiB / 剩余 9.7 GiB。
+- 至 `github.com`、`api.github.com`、`nodejs.org`、`registry.npmjs.org`、`api.cloudflare.com` 的 DNS 和 TCP 443 检查均成功。
+- 用户为了不污染 C 盘，把工具与项目放到 D 盘：
+  - Node.js：`D:\tools\node\node-v22.23.5-win-x64`，版本 `v22.23.5`。
+  - Go：`D:\tools\go\go`，版本 `go1.27.4 windows/amd64)。
+  - 便携版 MinGit：`D:\tools\git`，版本 `2.56.1.windows.1`。
+  - 项目克隆位置：`D:\beixiaoguo-CF`，远程为 `https://github.com/qmancf206/beixiaoguo-CF.git`，分支 main。
+  - npm 版本 `10.9.9`；`npm.cmd install --no-audit --no-fund` 已完成，输出 `added 79 packages in 1m`，只有 `node-domexception` deprecated 警告。
+  - 因 MinGit 缺少 `less`，普通 `git log` 会报 pager 错误；使用 `git --no-pager log ...` 或设置 `$env:GIT_PAGER='cat'`。
+  - 环境变量曾在当前 PowerShell 会话中设置，包含 D 盘 TEMP/npm/Go cache 路径；新开终端时须重新设置。
+- **截至本交接时，用户尚未提供 `npm.cmd test` 的执行结果。** 下一步先跑测试，而不是继续装工具或重新克隆。
+
+### 4. Windows VPS 下一条命令
+
+在 PowerShell 中进入项目目录后（工具文件已安装，依赖已安装），执行：
+
+```powershell
+Set-Location D:\beixiaoguo-CF
+$env:Path='D:\tools\node\node-v22.23.5-win-x64;D:\tools\go\go\bin;D:\tools\git\cmd;D:\tools\git\ucrt64\bin;D:\tools\git\usr\bin;'+$env:Path
+$env:TEMP='D:\bxg-temp'
+$env:TMP='D:\bxg-temp'
+$env:npm_config_cache='D:\npm-cache'
+$env:GOCACHE='D:\go-cache\build'
+$env:GOMODCACHE='D:\go-cache\pkg\mod'
+$env:GOMAXPROCS='2'
+$env:GOFLAGS='-p=1'
+$env:GIT_PAGER='cat'
+npm.cmd test
+```
+
+如测试失败，先修复第一个真实 Error；不要升级 npm（当前 10.9.9 足够），不要重装 Node/Go/Git，不要重新克隆，不要把整份长日志都复制出来。
+
+### 5. 测试通过后的部署计划
+
+1. 先确认本地项目配置的 Worker 名为 `beixiaoguo-cf-worker`，并以 `npx.cmd wrangler whoami` 确认 Cloudflare 登录账号正确。
+2. 可先尝试 `npx.cmd wrangler login` 使用浏览器授权；若不可用，再为正确账号创建最小权限 API Token，且不要在聊天里贴 Token。
+3. 不要把 Secret 放在源码、`.env`、命令行参数、GitHub 或日志里。建议在本机 PowerShell 用 .NET 的 `RandomNumberGenerator` 生成 32 bytes / 64 hex 字符的新值，直接在 `npx.cmd wrangler secret put BXG_MEDIA_SECRET --config wrangler.worker.jsonc` 的交互提示中粘贴；该命令会触发 Worker 新版本部署。先确认账号、Worker 名称和当前部署 fork，然后再执行，避免误部署到其它 Worker。
+4. 观察命令是否成功，并在 Cloudflare Deployments 确认新版本进入 Active Deployment。
+5. 在 `https://w.hiu.us.kg/` 刷新并重新播放；DEBUG 必须显示 `secretBound:true` 与 `secretLengthValid:true`，并且实际视频可以播放。仅仅显示部署 Ready 不算验收。
+6. 如果 Wrangler 更新后还是 `secretBound:false`，停止再次轮换 Secret。改查部署流水线是否覆盖 bindings、Cloudflare Build/Production service 关联以及实际生效版本；记录新的 Active deployment ID 和 `X-BXG-Trace-ID`，不要暴露密钥。
+
+### 6. 操作安全
+
+- 不要把 Cloudflare API Token 或 `BXG_MEDIA_SECRET` 放入 Git、截图、DEBUG JSON 或聊天。
+- 不要让用户继续重建/Rotate Secret 多次；先通过 Wrangler 对指定 Worker 做一次明确的配置部署，再验收。
+- Oracle 免费 AMD 主机：Ubuntu 20.04 x86_64、2 vCPU、约 1 GiB RAM、2 GiB Swap、根盘约剩 29 GiB，网络检查通过；未安装或修改。用户后来选用 Windows VPS，本次后续应继续在 Windows 上，不必再指导 Oracle 安装。
+
+
 | 文件 | 用途 |
 |---|---|
 | [README.md](README.md) | 项目目标、功能状态与 Pages 部署 |
