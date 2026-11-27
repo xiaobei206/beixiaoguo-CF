@@ -1,5 +1,14 @@
 # 贝小果 Cloudflare 开发日志
 
+## 0.1.6 — 2026-11-27
+
+### 线上诊断与海报代理
+- 根据 0.1.5 的真实诊断包确认：发现页、详情（日志中分别返回 104／116 集）和多季 API 多次 HTTP 200；播放解析有一次返回 ANONYMOUS_LIMITED；当次诊断中的封面 URL 全指向 p3-reading-sign.fqnovelpic.com，浏览器图片加载反复失败。
+- 修复 DEBUG 的 isolate 内存盲区：每一个 API 响应现在携带独立 trace ID 和该请求的 Go/WASM、上游请求事件；前端读取响应头并合并到本地诊断包，不再依赖后续请求命中相同 isolate。
+- 增加封面图片 CF 代理：只接受 HTTPS 的 *.fqnovelpic.com 域名，限制重定向、图片 MIME 和 10 MiB 大小；前端把这一图片域名的封面改为同源 /api/v1/images 加载。
+- 图片失败时自动进行一次 HEAD 诊断，回收边缘 trace、HTTP 状态和错误码。
+- DEBUG 的服务端运行状态优先采用本次 API 响应附带的 runtime 状态，避免空白 isolate 将已运行状态覆盖成未初始化。
+
 ## 0.1.5 — 2026-11-27
 
 ### 运行诊断与 Go/WASM 稳定性
