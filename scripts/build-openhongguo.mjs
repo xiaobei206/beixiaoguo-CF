@@ -184,7 +184,7 @@ try {
   };
   await writeFile(
     join(packageRoot, "bxg-build-info.js"),
-    "export const openhongguoBuild = Object.freeze(" + JSON.stringify(buildInfo) + ");\\n",
+    "export const openhongguoBuild = Object.freeze(" + JSON.stringify(buildInfo) + ");\n",
     "utf8"
   );
 
