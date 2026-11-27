@@ -7,7 +7,7 @@ const base = `http://127.0.0.1:${port}`;
 const child = spawn("npx", [
   "--yes", "wrangler@latest", "pages", "dev", "public",
   "--ip", "127.0.0.1", "--port", String(port)
-], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true, detached: process.platform !== "win32" });
 
 let output = "";
 child.stdout.on("data", chunk => { output += chunk.toString(); });
@@ -33,7 +33,7 @@ async function requestJson(path, milliseconds, label) {
 
 let basicHealth = null;
 try {
-  for (let attempt = 0; attempt < 30; attempt++) {
+  for (let attempt = 0; attempt < 15; attempt++) {
     if (child.exitCode !== null) {
       throw new Error("Wrangler Pages dev exited early.\n" + output.slice(-12000));
     }
@@ -68,12 +68,21 @@ try {
   console.log("Pages Functions runtime smoke test passed.");
   console.log("WASM SDK initialized successfully without issuing upstream requests.");
 } finally {
-  if (child.exitCode === null) {
-    child.kill("SIGTERM");
-    await Promise.race([
-      new Promise(resolve => child.once("exit", resolve)),
-      delay(3000)
-    ]);
-    if (child.exitCode === null) child.kill("SIGKILL");
-  }
+  const killProcessGroup = signal => {
+    try {
+      if (process.platform !== "win32" && child.pid) process.kill(-child.pid, signal);
+      else child.kill(signal);
+    } catch (_) {
+      // The process or process group may already have exited.
+    }
+  };
+  const exited = () => new Promise(resolve => {
+    if (child.exitCode !== null || child.signalCode !== null) resolve();
+    else child.once("exit", resolve);
+  });
+  killProcessGroup("SIGTERM");
+  await Promise.race([exited(), delay(1500)]);
+  // Also terminate descendants such as Wrangler/workerd if npx exited first.
+  killProcessGroup("SIGKILL");
+  await Promise.race([exited(), delay(1000)]);
 }
