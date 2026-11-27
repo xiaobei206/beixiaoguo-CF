@@ -1,7 +1,7 @@
 export function normalizeRouteIPAddress(raw) {
   let value = String(raw || "").trim();
   if (value.startsWith("[") && value.endsWith("]")) value = value.slice(1, -1);
-  if (!value || /[\\s/?#@]/.test(value)) return "";
+  if (!value || /[\s/?#@]/.test(value)) return "";
 
   if (value.includes(":")) {
     try {
@@ -15,6 +15,6 @@ export function normalizeRouteIPAddress(raw) {
   }
 
   const octets = value.split(".");
-  if (octets.length !== 4 || octets.some((part) => !/^\\d{1,3}$/.test(part) || Number(part) > 255)) return "";
+  if (octets.length !== 4 || octets.some((part) => !/^\d{1,3}$/.test(part) || Number(part) > 255)) return "";
   return octets.map((part) => String(Number(part))).join(".");
 }
