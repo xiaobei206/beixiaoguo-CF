@@ -14,6 +14,7 @@ if (js.includes("按需 Range 解密尚未迁移到边缘函数") || js.includes
 if (!js.includes("当前后端返回了受保护标记，但没有返回边缘媒体地址")) throw new Error("播放器必须为缺少边缘媒体地址的旧后端提供明确部署诊断。");
 if (!js.includes("player.media.error") || !js.includes("player.media.stalled") || !js.includes("mediaElementDiagnostics(video)")) throw new Error("Browser media-state diagnostics are missing.");
 if (!js.includes("const EDGE_PREFETCH_COUNT = 6;") || !js.includes("const BROWSER_PRELOAD_COUNT = 3;")) throw new Error("Playback prefetch targets must remain six edge resolutions and three browser videos.");
+const worker = await readFile("functions/api/v1/[[path]].js", "utf8");
 if (!worker.includes('parts[0] === "prefetch" && request.method === "POST"') || !worker.includes("episodeIds.length > 6") || !worker.includes("最多预解析 6 集")) throw new Error("Edge playback prefetch must be capped at six episodes.");
 const styles = await readFile("public/assets/app.css", "utf8");
 if (!styles.includes(".player-preload-container") || !styles.includes(".bxg-preload-video")) throw new Error("Offscreen browser preloading styles are missing.");
@@ -23,7 +24,6 @@ if (routes.version !== 1 || !routes.include?.includes("/api/*")) throw new Error
 const version = (await readFile("VERSION", "utf8")).trim();
 if (!js.includes('const APP_VERSION = "' + version + '";')) throw new Error("DEBUG app version does not match VERSION.");
 const packageInfo = JSON.parse(await readFile("package.json", "utf8"));
-const worker = await readFile("functions/api/v1/[[path]].js", "utf8");
 if (worker.includes("Cloudflare Worker Secrets 中配置 BXG_MEDIA_SECRET")) throw new Error("Secret error still uses the generic Worker-only wording.");
 if (!worker.includes("mediaSecretSetupMessage(runtimeName)") || !worker.includes("Pages 和独立 Worker 的 Secrets 不会自动共享")) throw new Error("Secret error must explain runtime-specific setup and independent environments.");
 if (!worker.includes("debugSession:session") || !worker.includes("media.cenc.stream.failed") || !worker.includes("media.cenc.stream.truncated")) throw new Error("Native video requests must retain correlated media-stream diagnostics.");
