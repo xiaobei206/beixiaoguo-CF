@@ -60,8 +60,19 @@ try {
   const sdkBody = await sdkResponse.json();
   assert.equal(sdkResponse.status, 200);
   assert.equal(sdkBody.sdk, "ready", "openhongguo WASM SDK did not initialize in Workers runtime");
+
+  const probeResponse = await fetchResponse(
+    "/api/v1/health?sdk=probe",
+    10000,
+    "Worker Go/WASM callback probe timed out.\\n" + output.slice(-12000)
+  );
+  const probeBody = await probeResponse.json();
+  assert.equal(probeResponse.status, 200, "Worker Go/WASM callback probe failed: " + JSON.stringify(probeBody));
+  assert.equal(probeBody.goCallbacks, "ok", "Worker did not complete Go-to-JavaScript callbacks");
+  assert.ok(probeBody.transportCalls >= 2, "Worker did not invoke the mock transport twice on one Go runtime");
+  assert.equal(probeBody.wasm.exited, false, "Worker Go/WASM runtime exited during the probe");
   console.log("Cloudflare Workers runtime smoke test passed.");
-  console.log("Static assets and the shared WASM-backed API handler initialized successfully.");
+  console.log("Static assets, WASM initialization, and repeated Go-to-JavaScript callbacks passed.");
 } finally {
   const killProcessGroup = signal => {
     try {
