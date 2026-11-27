@@ -8,7 +8,7 @@ assert.ok(token.length>40);
 assert.equal(token.includes(payload.key),false);
 assert.equal(token.includes("cdn.example.com"),false);
 assert.deepEqual(await openMediaSession(token,secret),payload);
-await assert.rejects(()=>openMediaSession(token,"wrong-secret-0123456789abcdef"),/invalid or cannot be decrypted/);
+await assert.rejects(()=>openMediaSession(token,"wrong-secret-0123456789abcdef0123456789"),/invalid or cannot be decrypted/);
 const index=Math.floor(token.length/2);
 const tampered=token.slice(0,index)+(token[index]==="A"?"B":"A")+token.slice(index+1);
 await assert.rejects(()=>openMediaSession(tampered,secret),/invalid or cannot be decrypted|invalid media session token/);
