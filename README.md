@@ -54,8 +54,8 @@
 
 ## 0.1.13：浏览器自选 CF 入口 IP（需自定义域名）
 - 新增浏览器本地线路管理器：用户自行添加 IPv4／IPv6，端口固定 443；线路列表只保存在当前浏览器。
-- 通过一次 `/api/v1/route?alt_ip=...` 同源请求将所选 IP 放入 URL 查询参数，由 Cloudflare Response Header Transform Rules 动态公告 Alt-Svc；不写 Cookie，且不依赖 Pro 专属的 `http.request.cookies` 规则字段。Worker 诊断接口读取 Alt-Used，帮助确认浏览器是否使用备用入口。
-- Cloudflare 会过滤 Worker 直接返回的 Alt-Svc；workers.dev／pages.dev 默认域名无法配置 Zone Transform Rules。要启用自选入口，必须绑定自有橙云域名并按部署教程配置三条响应头规则。
+- 通过一次 `/api/v1/route?alt_ip=...` 同源请求提交所选 IP；Worker 先验证地址，再由 Cloudflare Response Header Transform Rules 读取内部 `X-BXG-Alt-IP` 响应头动态公告 Alt-Svc，随后删除内部头；不写 Cookie，也不依赖 Pro 专属字段。Worker 诊断接口读取 Alt-Used，帮助确认浏览器是否使用备用入口。
+- Cloudflare 会过滤 Worker 直接返回的 Alt-Svc；workers.dev／pages.dev 默认域名无法配置 Zone Transform Rules。要启用自选入口，必须绑定自有橙云域名并按部署教程配置四条响应头规则。
 - Alt-Svc 仅影响后续新建连接，不强制迁移已建立连接；IP 必须支持原始站点域名的 TLS/SNI 与 HTTP/2。VLESS 可用本身不等于浏览器 HTTPS/HTTP/2 一定可用。
 
 ## 0.1.12：真实 CF 边缘媒体预热
