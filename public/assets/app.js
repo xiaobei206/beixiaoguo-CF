@@ -254,7 +254,7 @@
     window.clearInterval(settingsRefreshTimer);
     $("#settings-live").textContent =
       "当前为 Cloudflare 轻量版：页面由 Pages 或 Workers 提供，片库请求按需通过边缘函数执行。\n\n" +
-      "本版本不运行 N1 那样的常驻预热任务，也不提供服务器磁盘缓存管理。收藏和匿名会话标识保存在当前浏览器。\n\n" +
+      "本版本不运行 N1 那样的常驻预热任务，也不提供服务器磁盘缓存管理。收藏和匿名会话标识保存在当前浏览器，无需创建 KV。\n\n" +
       "视频：可直接播放的非加密流会尝试使用浏览器原生播放器；受保护的 CENC 流正在迁移，暂不可播放。\n\n" +
       "电视接力：Cloudflare 边缘函数不能直接搜索家庭局域网，暂需原版 N1 或本地助手。";
     const form = $("#settings-form");
@@ -520,7 +520,7 @@
         $("#hero").hidden = true;
         renderFilterTags();
         renderPagination();
-        setStatus(state.favorites.length ? "收藏保存在当前浏览器，不会上传到 N1。" : "还没有收藏的短剧。打开剧集详情即可收藏。");
+        setStatus(state.favorites.length ? "收藏保存在当前浏览器，不会上传到服务器。" : "还没有收藏的短剧。打开剧集详情即可收藏。");
         return;
       }
 
@@ -776,7 +776,7 @@
       });
     }
 
-    // Keep an absolute N1-proxy URL as a fallback for browsers which prefer
+    // Keep an absolute cover URL fallback for browsers which prefer
     // fetching artwork themselves, with the actual dimensions when available.
     if (artworkURL) {
       const origin = String(window.location && window.location.origin || "");
@@ -1319,7 +1319,7 @@
         '<div id="playback-status" class="playback-status" role="status">选择集数开始播放</div></section>' +
         '<h3 class="episode-heading">选集</h3><div class="episode-grid">' +
         episodes.map((ep) => '<button class="episode-chip" type="button" data-episode-id="' + escapeHTML(ep.id) + '" data-episode-number="' + escapeHTML(ep.number || "") + '"' + (ep.playable === false ? ' disabled title="当前分集不可播放"' : '') + '>' + escapeHTML("第 " + (ep.number || "") + " 集") + '</button>').join("") +
-        '</div><div class="player-note">支持 0.5–3 倍速、按住临时 2×、上下滑切集和自动连播。视频仍由 N1 按需读取与解密；投屏通过局域网交给 hongguoTV。</div>';
+        '</div><div class="player-note">支持 0.5–3 倍速、按住临时 2×、上下滑切集和自动连播。可直接播放的非受保护流由浏览器尝试播放；受保护的 CENC 流暂不可播放。电视接力需要家庭局域网内的 N1 或本地助手。</div>';
 
       const detailCoverImage = body.querySelector(".detail-hero img");
       if (detailCoverImage) {
@@ -1553,7 +1553,7 @@
       speedSelect.value = String(playback.speed || 1);
 
       status.textContent = "已取得 " + (info.quality || "自动") + " 播放流" +
-        (info.protected ? " · N1 正在按需解密" : " · 明文 MP4") + "。正在连接视频…";
+        (info.protected ? " · 受保护流" : " · 直接视频流") + "。正在连接视频…";
       const target = Math.max(0, Number(resumeAt) || 0);
       if (target > 0) {
         video.addEventListener("loadedmetadata", () => {
@@ -1606,7 +1606,7 @@
     }
     const dialog = $("#cast-dialog");
     const content = $("#cast-dialog-content");
-    content.innerHTML = '<div class="empty-state">正在搜索局域网内的 hongguoTV…</div>';
+    content.innerHTML = '<div class="empty-state">正在检查投屏支持…</div>';
     if (!dialog.open) dialog.showModal();
     try {
       const result = await request("/api/v1/tv/devices");
