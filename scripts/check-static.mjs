@@ -28,7 +28,7 @@ if (worker.includes("Cloudflare Worker Secrets 中配置 BXG_MEDIA_SECRET")) thr
 if (!worker.includes("mediaSecretSetupMessage(runtimeName)") || !worker.includes("Pages 和独立 Worker 的 Secrets 不会自动共享")) throw new Error("Secret error must explain runtime-specific setup and independent environments.");
 if (!worker.includes("debugSession:session") || !worker.includes("media.cenc.stream.failed") || !worker.includes("media.cenc.stream.truncated")) throw new Error("Native video requests must retain correlated media-stream diagnostics.");
 if (!worker.includes("async function prewarmProtectedMedia(") || !worker.includes("await cache.put(key,response)") || !worker.includes("media.edge-cache.hit") || !worker.includes("media.edge-cache.ready")) throw new Error("Cloudflare must prewarm and serve decrypted media from its edge cache.");
-if (!worker.includes("MAX_EDGE_PREFETCH_MEDIA_BYTES = 32 << 20") || !worker.includes('"Cache-Control":"public, max-age="+browserCacheSeconds')) throw new Error("Edge media cache must enforce a size cap and token-lifetime TTL.");
+if (!worker.includes("MAX_EDGE_PREFETCH_MEDIA_BYTES = 32 << 20") || !worker.includes("mediaCacheControl=total<=MAX_EDGE_PREFETCH_MEDIA_BYTES") || !worker.includes("Math.min(2700,Math.floor((media.exp-Date.now())/1000))")) throw new Error("Edge media cache must enforce a size cap and token-lifetime TTL.");
 const workerRuntime = await readFile("functions/openhongguo-runtime.js", "utf8");
 const cencRuntime = await readFile("functions/cenc-runtime.js", "utf8");
 const cencSource = await readFile("edge-cenc/cenc/layout.go", "utf8");
