@@ -13,10 +13,10 @@ const DEBUG_LOG_TTL_MS = 60 * 60 * 1000;
 
 function sanitizeDebugMessage(value) {
   return String(value == null ? "" : value)
-    .replace(/https?:\\/\\/[^\\s"'<>]+/gi, (raw) => {
+    .replace(/https?:\/\/[^\s"'<>]+/gi, (raw) => {
       try { const u = new URL(raw); return u.origin + u.pathname; } catch (_) { return "[URL]"; }
     })
-    .replace(/(authorization|cookie|set-cookie|token|secret|password|session)(\\s*[:=]\\s*)[^\\s,;]+/gi, "$1$2[REDACTED]")
+    .replace(/(authorization|cookie|set-cookie|token|secret|password|session)(\s*[:=]\s*)[^\s,;]+/gi, "$1$2[REDACTED]")
     .replace(/[A-Za-z0-9_-]{48,}/g, "[LONG_TOKEN]")
     .slice(0, 420);
 }
