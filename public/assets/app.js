@@ -21,7 +21,9 @@
   let settingsRefreshTimer = 0;
   let deferredInstallPrompt = null;
   const DEBUG_STORAGE_KEY = "beixiaoguo.cf.debug-log";
-  const APP_VERSION = "0.1.10";
+  const APP_VERSION = "0.1.11";
+  const EDGE_PREFETCH_COUNT = 16;
+  const BROWSER_PRELOAD_COUNT = 3;
   const MAX_DEBUG_ENTRIES = 180;
   let debugEntries = loadDebugEntries();
   let serverDebugEntries = [];
@@ -54,7 +56,7 @@
     loadSequence: 0,
     autoLoadScheduled: false,
     detailRequestId: 0,
-    playback: {seriesId:"",seriesTitle:"",seriesCover:"",seriesArtworkDataURL:"",episodes:[],index:-1,quality:"best",speed:1,requestId:0,temporaryBoost:false}
+    playback: {seriesId:"",seriesTitle:"",seriesCover:"",seriesArtworkDataURL:"",episodes:[],index:-1,quality:"best",speed:1,requestId:0,temporaryBoost:false,prefetched:Object.create(null),prefetchPending:new Set(),prefetchFailed:Object.create(null),prefetchInFlight:false,preloadVideos:[]}
   };
 
   const navLabels = {
@@ -1326,6 +1328,7 @@
   function stopPlayback() {
     endTemporaryBoost();
     setPlaybackActivity(false);
+    clearBrowserPreloads();
     const video = $("#web-player");
     const pipButton = $("#pip-hold-speed");
     if (pipButton) pipButton.hidden = true;
@@ -1585,7 +1588,7 @@
       const title = series.title || "贝小果短剧";
       const cover = safeImage(series.cover_url || series.coverUrl);
       const fav = state.favorites.some((entry) => entry.id === id);
-      state.playback = {seriesId:id,seriesTitle:title,seriesCover:cover,seriesArtworkDataURL:"",episodes:episodes,index:-1,quality:"best",speed:1,requestId:0,temporaryBoost:false};
+      state.playback = {seriesId:id,seriesTitle:title,seriesCover:cover,seriesArtworkDataURL:"",episodes:episodes,index:-1,quality:"best",speed:1,requestId:0,temporaryBoost:false,prefetched:Object.create(null),prefetchPending:new Set(),prefetchFailed:Object.create(null),prefetchInFlight:false,preloadVideos:[]};
       body.innerHTML =
         '<div class="detail-hero">' +
         (cover ? '<img src="' + escapeHTML(cover) + '" alt="">' : '<div class="poster-placeholder detail-placeholder">贝</div>') +
@@ -1608,7 +1611,7 @@
         '<button id="player-web-fullscreen" class="player-action" type="button" aria-pressed="false">网页全屏</button>' +
         '<button id="player-fullscreen" class="player-action" type="button">系统全屏</button>' +
         '<button id="player-close" class="player-close" type="button">收起</button></div>' +
-        '<div id="player-stage" class="player-stage"><video id="web-player" controls playsinline webkit-playsinline disableRemotePlayback x-webkit-airplay="deny" preload="metadata"></video>' +
+        '<div id="player-stage" class="player-stage"><video id="web-player" controls playsinline webkit-playsinline disableRemotePlayback x-webkit-airplay="deny" preload="auto"></video><div id="player-preload-container" class="player-preload-container" aria-hidden="true"></div>' +
         '' +
         '</div>' +
         '<div class="player-nav"><button id="player-prev" type="button">上一集</button><button id="player-next" type="button">下一集</button></div>' +
@@ -1807,6 +1810,195 @@
     playEpisodeAt(index);
   }
 
+  function validPrefetchedPlayback(playback, episodeId) {
+    const entry = playback.prefetched && playback.prefetched[String(episodeId)];
+    if (!entry || !entry.info || !entry.info.src) return null;
+    const explicitExpiry = Number(entry.info.expires_at) * 1000;
+    const expiry = explicitExpiry > 0 ? explicitExpiry : (Number(entry.fetchedAt) || 0) + 5 * 60 * 1000;
+    if (expiry <= Date.now() + 30000) {
+      delete playback.prefetched[String(episodeId)];
+      debugWrite("warn", "playback.edge.prefetch.expired", {episodeId:String(episodeId)});
+      return null;
+    }
+    return entry;
+  }
+
+  function removeBrowserPreload(episodeId) {
+    const playback = state.playback;
+    const entries = playback.preloadVideos || [];
+    const index = entries.findIndex((entry) => String(entry.episodeId) === String(episodeId));
+    if (index < 0) return;
+    const entry = entries[index];
+    entries.splice(index, 1);
+    try {
+      entry.video.pause();
+      entry.video.removeAttribute("src");
+      entry.video.load();
+      entry.video.remove();
+    } catch (_) {}
+  }
+
+  function clearBrowserPreloads() {
+    const playback = state.playback;
+    const entries = playback.preloadVideos || [];
+    playback.preloadVideos = [];
+    for (const entry of entries) {
+      try {
+        entry.video.pause();
+        entry.video.removeAttribute("src");
+        entry.video.load();
+        entry.video.remove();
+      } catch (_) {}
+    }
+  }
+
+  function syncBrowserPreloads(currentIndex) {
+    const playback = state.playback;
+    const container = $("#player-preload-container");
+    if (!container || currentIndex < 0) return;
+    const wanted = [];
+    let cursor = currentIndex;
+    for (let count = 0; count < BROWSER_PRELOAD_COUNT; count++) {
+      const index = findPlayableEpisode(cursor, 1);
+      if (index < 0) break;
+      cursor = index;
+      const episode = playback.episodes[index];
+      const entry = validPrefetchedPlayback(playback, episode.id);
+      if (entry) wanted.push({index, episode, info:entry.info});
+    }
+
+    const keep = [];
+    for (const target of wanted) {
+      const old = (playback.preloadVideos || []).find((entry) =>
+        entry.index === target.index && entry.src === target.info.src
+      );
+      if (old) {
+        keep.push(old);
+        continue;
+      }
+      const video = document.createElement("video");
+      video.className = "bxg-preload-video";
+      video.preload = "auto";
+      video.muted = true;
+      video.playsInline = true;
+      video.disableRemotePlayback = true;
+      video.setAttribute("aria-hidden", "true");
+      video.setAttribute("tabindex", "-1");
+      const episodeNumber = target.episode.number || target.index + 1;
+      const entry = {
+        index: target.index,
+        episodeId: String(target.episode.id),
+        src: target.info.src,
+        video
+      };
+      video.addEventListener("loadeddata", () => {
+        const bufferedEnd = video.buffered && video.buffered.length
+          ? video.buffered.end(video.buffered.length - 1) : 0;
+        debugWrite("info", "playback.browser.preload.ready", {
+          episodeNumber, readyState:video.readyState, bufferedEndSeconds:Math.round(bufferedEnd * 10) / 10
+        });
+      }, {once:true});
+      video.addEventListener("error", () => {
+        debugWrite("warn", "playback.browser.preload.error", {
+          episodeNumber, errorCode:video.error ? video.error.code : 0
+        });
+      }, {once:true});
+      video.src = target.info.src;
+      container.appendChild(video);
+      video.load();
+      debugWrite("info", "playback.browser.preload.start", {
+        episodeNumber, protected:!!target.info.protected
+      });
+      keep.push(entry);
+    }
+
+    for (const old of playback.preloadVideos || []) {
+      if (!keep.includes(old)) {
+        try {
+          old.video.pause();
+          old.video.removeAttribute("src");
+          old.video.load();
+          old.video.remove();
+        } catch (_) {}
+      }
+    }
+    playback.preloadVideos = keep;
+  }
+
+  async function ensureEdgePlaybackPrefetch(currentIndex) {
+    const playback = state.playback;
+    if (!playback.seriesId || currentIndex < 0) return;
+    if (playback.prefetchInFlight) return;
+    const pending = playback.prefetchPending || (playback.prefetchPending = new Set());
+    const failed = playback.prefetchFailed || (playback.prefetchFailed = Object.create(null));
+    let readyAhead = 0;
+    let pendingAhead = 0;
+    const missing = [];
+    for (let index = currentIndex + 1; index < playback.episodes.length; index++) {
+      const episode = playback.episodes[index];
+      if (!episode || episode.playable === false || !episode.id) continue;
+      const id = String(episode.id);
+      if (validPrefetchedPlayback(playback, id)) readyAhead++;
+      else if (pending.has(id)) pendingAhead++;
+      else if (!(Number(failed[id]) > Date.now())) missing.push(id);
+    }
+    const capacity = Math.max(0, EDGE_PREFETCH_COUNT - readyAhead - pendingAhead);
+    const episodeIds = missing.slice(0, capacity);
+    if (!episodeIds.length) {
+      syncBrowserPreloads(currentIndex);
+      return;
+    }
+
+    playback.prefetchInFlight = true;
+    episodeIds.forEach((id) => pending.add(id));
+    const seriesId = playback.seriesId;
+    const startIndex = currentIndex;
+    debugWrite("info", "playback.edge.prefetch.start", {
+      episodeCount:episodeIds.length, browserPreloadCount:BROWSER_PRELOAD_COUNT, fromEpisode:currentIndex + 1
+    });
+    try {
+      const result = await request("/api/v1/prefetch", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({episodeIds,quality:playback.quality || "best"})
+      });
+      if (state.playback !== playback || playback.seriesId !== seriesId) return;
+      const returned = new Set();
+      for (const item of Array.isArray(result.items) ? result.items : []) {
+        const id = String(item && item.episodeId || "");
+        if (!id) continue;
+        returned.add(id);
+        if (item.info && item.info.src) {
+          playback.prefetched[id] = {info:item.info,fetchedAt:Date.now()};
+        } else {
+          failed[id] = Date.now() + (item.errorCode === "MEDIA_SECRET_REQUIRED" ? 5 * 60 * 1000 : 60 * 1000);
+          debugWrite("warn", "playback.edge.prefetch.item-failed", {
+            episodeId:id, code:item.errorCode || "", message:item.error || ""
+          });
+        }
+      }
+      for (const id of episodeIds) {
+        pending.delete(id);
+        if (!returned.has(id)) failed[id] = Date.now() + 60 * 1000;
+      }
+      debugWrite("info", "playback.edge.prefetch.ready", {
+        requested:result.requested || episodeIds.length, ready:result.ready || 0
+      });
+      syncBrowserPreloads(playback.index);
+      if (playback.index !== startIndex) ensureEdgePlaybackPrefetch(playback.index);
+    } catch (error) {
+      if (state.playback === playback) {
+        episodeIds.forEach((id) => {
+          pending.delete(id);
+          failed[id] = Date.now() + 30000;
+        });
+        debugWrite("warn", "playback.edge.prefetch.failed", {message:error.message || String(error)});
+      }
+    } finally {
+      playback.prefetchInFlight = false;
+    }
+  }
+
   function playEpisodeAt(index) {
     const episode = state.playback.episodes[index];
     if (!episode || episode.playable === false) return;
@@ -1823,6 +2015,7 @@
     setMediaSessionPlaybackState("paused");
     const requestID = ++playback.requestId;
     const episodeNumber = episode.number || index + 1;
+    const cachedPlayback = validPrefetchedPlayback(playback, episode.id);
     const panel = $("#playback-panel");
     const video = $("#web-player");
     const status = $("#playback-status");
@@ -1839,7 +2032,8 @@
 
     try {
       const chosen = quality || playback.quality || "best";
-      const info = await request("/api/v1/play/" + encodeURIComponent(episode.id) + "?quality=" + encodeURIComponent(chosen));
+      const info = cachedPlayback ? cachedPlayback.info : await request("/api/v1/play/" + encodeURIComponent(episode.id) + "?quality=" + encodeURIComponent(chosen));
+      if (cachedPlayback) debugWrite("info", "playback.edge.prefetch.used", {episodeNumber});
       if (requestID !== playback.requestId) return;
       if (info.protected && !info.src) {
         status.textContent = "当前后端返回了受保护标记，但没有返回边缘媒体地址。请将 Cloudflare 部署更新到仓库 main 的最新版本；若后端提示 MEDIA_SECRET_REQUIRED，再配置 BXG_MEDIA_SECRET（至少 32 个字符）。";
@@ -1866,8 +2060,13 @@
         debugWrite("error","player.media.error",mediaElementDiagnostics(video));
         status.textContent = "浏览器无法播放此视频（媒体错误 " + code + "）。可尝试切换画质或使用其他浏览器。";
       };
+      video.preload = "auto";
       video.src = info.src;
       video.load();
+      video.addEventListener("loadedmetadata", () => {
+        removeBrowserPreload(episode.id);
+        syncBrowserPreloads(index);
+      }, {once:true});
       video.playbackRate = playback.speed || 1;
       try {
         await video.play();
@@ -1881,6 +2080,8 @@
         }
       }
       updateEpisodeButtons();
+      ensureEdgePlaybackPrefetch(index);
+      syncBrowserPreloads(index);
     } catch (error) {
       if (requestID !== playback.requestId) return;
       status.textContent = error.message || "播放初始化失败";
