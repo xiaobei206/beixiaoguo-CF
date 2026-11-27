@@ -18,7 +18,7 @@
             └─ openhongguo Node.js/WASM SDK
                  └─ 红果上游接口
 
-Pages Function 中使用 openhongguo 的 Node.js/WASM SDK，注入基于 Fetch 的 Transport。由于 SDK 默认通过 Node 的动态 `require()` / 文件路径读取 WASM，Cloudflare 构建阶段用 `scripts/patch-openhongguo.mjs` 做一个受版本校验的兼容补丁；`functions/openhongguo-runtime.js` 静态导入 `wasm_exec.js` 和预编译的 `WebAssembly.Module`（Wrangler `CompiledWasm` 规则），避免边缘运行时动态查找模块或动态编译 WASM。匿名设备 profile 在边缘 isolate 的内存中按浏览器会话标识分开保存，不写入数据库。边缘 isolate 冷启动后内存会重置，必要时 SDK 会重新注册匿名设备。构建补丁暴露 Go runtime 生命周期；若底层 WASM 退出，API 层会清理旧客户端并尝试重建 runtime。
+Pages Function 中使用 openhongguo 的 Node.js/WASM SDK，注入基于 Fetch 的 Transport。由于 SDK 默认通过 Node 的动态 `require()` / 文件路径读取 WASM，Cloudflare 构建阶段用 `scripts/patch-openhongguo.mjs` 做一个受版本校验的兼容补丁；`functions/openhongguo-runtime.js` 静态导入 `wasm_exec.js` 和预编译的 `WebAssembly.Module`（Wrangler `CompiledWasm` 规则），避免边缘运行时动态查找模块或动态编译 WASM。匿名设备 profile 在边缘 isolate 的内存中按浏览器会话标识分开保存，不写入数据库。边缘 isolate 冷启动后内存会重置，必要时 SDK 会重新注册匿名设备。构建补丁暴露 Go runtime 生命周期；若底层 WASM 退出，API 层会清理旧客户端并尝试重建 runtime。每个 API 响应还会附带独立 trace ID 和本次请求事件，不依赖后续请求命中同一个 isolate。
 
 ## API 迁移
 
@@ -28,7 +28,7 @@ Pages Function 中使用 openhongguo 的 Node.js/WASM SDK，注入基于 Fetch �
 
 ## 运行诊断
 
-首页右上角的 DEBUG 入口可复制前端和边缘服务端诊断包。前端记录 API 状态／耗时、响应字段摘要、封面 URL 协议分布和资源加载错误；边缘端按 `X-BXG-Session` 隔离日志，记录 SDK 初始化、Go/WASM 运行状态和上游请求状态／耗时。日志仅保存在当前 isolate 内存中，最多保留一小时、每会话 240 条；前端本地保留最近 180 条。敏感查询参数、Cookie、Token 和完整 URL 会脱敏。日志不包含请求正文。
+首页右上角的 DEBUG 入口可复制前端和边缘服务端诊断包。前端记录 API 状态／耗时、响应字段摘要、封面 URL 协议分布和资源加载错误；每个 API 响应通过响应头返回该次请求的 trace ID、Go/WASM 状态和上游请求事件，因此 Cloudflare 将后续请求分配给不同 isolate 时，仍能保留本次调用的诊断信息。边缘端按 `X-BXG-Session` 隔离的内存日志仍作为辅助记录，最多保留一小时、每会话 240 条；前端本地保留最近 180 条。敏感查询参数、Cookie、Token 和完整 URL 会脱敏。日志不包含请求正文。
 
 ## 已知限制
 
