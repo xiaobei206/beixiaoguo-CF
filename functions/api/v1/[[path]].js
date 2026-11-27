@@ -6,6 +6,53 @@ const MAX_CLIENTS = 128;
 const MAX_PROFILES = 256;
 const clients = new Map();
 const profiles = new Map();
+const debugLogs = new Map();
+const MAX_DEBUG_SESSIONS = 128;
+const MAX_DEBUG_EVENTS = 240;
+const DEBUG_LOG_TTL_MS = 60 * 60 * 1000;
+
+function sanitizeDebugMessage(value) {
+  return String(value == null ? "" : value)
+    .replace(/https?:\\/\\/[^\\s"'<>]+/gi, (raw) => {
+      try { const u = new URL(raw); return u.origin + u.pathname; } catch (_) { return "[URL]"; }
+    })
+    .replace(/(authorization|cookie|set-cookie|token|secret|password|session)(\\s*[:=]\\s*)[^\\s,;]+/gi, "$1$2[REDACTED]")
+    .replace(/[A-Za-z0-9_-]{48,}/g, "[LONG_TOKEN]")
+    .slice(0, 420);
+}
+function debugRecord(session, level, event, detail = {}) {
+  if (!session) return;
+  const now = Date.now();
+  for (const [key, bucket] of debugLogs) {
+    if (now - bucket.updatedAt > DEBUG_LOG_TTL_MS) debugLogs.delete(key);
+  }
+  let bucket = debugLogs.get(session);
+  if (!bucket) bucket = { updatedAt: now, events: [] };
+  bucket.updatedAt = now;
+  bucket.events.push({ time: new Date(now).toISOString(), level, event, ...detail });
+  if (bucket.events.length > MAX_DEBUG_EVENTS) bucket.events.splice(0, bucket.events.length - MAX_DEBUG_EVENTS);
+  debugLogs.delete(session);
+  debugLogs.set(session, bucket);
+  while (debugLogs.size > MAX_DEBUG_SESSIONS) debugLogs.delete(debugLogs.keys().next().value);
+}
+function runtimeDiagnostics() {
+  const go = globalThis.__BXG_OPENHONGGUO_GO;
+  const state = globalThis.__BXG_OPENHONGGUO_STATE || {};
+  return {
+    initialized: !!globalThis.__openhongguo,
+    exited: !!go?.exited || !!state.exited,
+    generation: Number(state.generation || globalThis.__BXG_OPENHONGGUO_GENERATION) || 0,
+    startedAt: state.startedAt || null,
+    exitedAt: state.exitedAt || null,
+    error: sanitizeDebugMessage(state.error || ""),
+  };
+}
+function describeEndpoint(parts) {
+  if (parts[0] === "series" && parts.length > 1) return "series/:id/" + (parts[2] || "detail");
+  if (parts[0] === "play" && parts.length > 1) return "play/:episodeId";
+  if (parts[0] === "debug") return "debug/logs";
+  return parts.join("/") || "root";
+}
 
 function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
@@ -34,7 +81,13 @@ function getSession(request) {
   if (/^[a-zA-Z0-9._:-]{8,128}$/.test(value)) return value;
   return "bxg-edge-" + crypto.randomUUID();
 }
-async function fetchTransport(req) {
+function fetchTransport(session) {
+  return async function sendTransport(req) {
+    const startedAt = Date.now();
+    let target = "upstream";
+    try { const u = new URL(req.url); target = u.hostname + u.pathname; } catch (_) {}
+    debugRecord(session, "debug", "upstream.request", { method: req.method || "GET", target });
+    try {
   const headers = new Headers(req.headers || {});
   headers.delete("host");
   headers.delete("content-length");
@@ -64,7 +117,17 @@ async function fetchTransport(req) {
     const index = pair.indexOf("=");
     if (index > 0) cookies[pair.slice(0, index).trim()] = pair.slice(index + 1).trim();
   }
+  debugRecord(session, response.ok ? "info" : "warn", "upstream.response", {
+    target, status: response.status, durationMs: Date.now() - startedAt, bytes: bytes.byteLength
+  });
   return { status: response.status, headers: responseHeaders, cookies, body: bytes };
+    } catch (error) {
+      debugRecord(session, "error", "upstream.error", {
+        target, durationMs: Date.now() - startedAt, message: sanitizeDebugMessage(error?.message || error)
+      });
+      throw error;
+    }
+  };
 }
 function profileStore(session) {
   return {
@@ -87,22 +150,48 @@ function profileStore(session) {
   };
 }
 async function getClient(session) {
+  if (globalThis.__BXG_OPENHONGGUO_GO?.exited) {
+    debugRecord(session, "warn", "wasm.runtime.exited", runtimeDiagnostics());
+    clients.clear();
+  }
   const cached = clients.get(session);
   if (cached) {
     clients.delete(session);
     clients.set(session, cached);
     return cached;
   }
+  debugRecord(session, "info", "sdk.client.create", runtimeDiagnostics());
   const client = await createClient({
     profile: profileStore(session),
-    transport: fetchTransport,
+    transport: fetchTransport(session),
+    log: (line) => debugRecord(session, "debug", "sdk.log", { message: sanitizeDebugMessage(line) }),
     timeoutMs: 25000,
     retryAttempts: 2,
     deviceResets: 1,
   });
+  debugRecord(session, "info", "sdk.client.ready", runtimeDiagnostics());
   clients.set(session, client);
   trimMap(clients, MAX_CLIENTS);
   return client;
+}
+async function callClient(session, method, ...args) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const client = await getClient(session);
+    try {
+      return await client[method](...args);
+    } catch (error) {
+      const message = String(error?.message || error);
+      if (attempt === 0 && /Go program has already exited/i.test(message)) {
+        debugRecord(session, "error", "wasm.call.after-exit", {
+          method, message, runtime: runtimeDiagnostics()
+        });
+        clients.clear();
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error("Go/WASM runtime 重启后仍无法完成调用");
 }
 function mapSearchType(value) {
   switch (value) {
@@ -150,14 +239,52 @@ export async function onRequest(context) {
   });
   try {
     if (request.method === "OPTIONS") return new Response(null, { status: 204 });
-    if (request.method !== "GET" && request.method !== "HEAD" && request.method !== "POST" && request.method !== "PUT") {
+    if (request.method !== "GET" && request.method !== "HEAD" && request.method !== "POST" && request.method !== "PUT" && request.method !== "DELETE") {
       return errorResponse(405, "METHOD_NOT_ALLOWED", "不支持的请求方法");
+    }
+    if (parts[0] === "debug" && parts[1] === "logs") {
+      const session = getSession(request);
+      if (request.method === "DELETE") {
+        debugLogs.delete(session);
+        debugRecord(session, "info", "debug.logs.cleared");
+        return json({ ok: true });
+      }
+      const bucket = debugLogs.get(session);
+      if (bucket) {
+        bucket.updatedAt = Date.now();
+        debugLogs.delete(session);
+        debugLogs.set(session, bucket);
+      }
+      const requestedLimit = Number(url.searchParams.get("limit")) || 160;
+      const limit = Math.max(1, Math.min(240, requestedLimit));
+      return json({ events: bucket ? bucket.events.slice(-limit) : [], runtime: runtimeDiagnostics() });
     }
     if (parts[0] === "health") {
       let sdkState = "not-loaded";
       if (url.searchParams.get("sdk") === "1") {
         await getClient(getSession(request));
         sdkState = "ready";
+      }
+      if (url.searchParams.get("sdk") === "probe" && context.env?.BXG_SMOKE_TEST === "1") {
+        let transportCalls = 0;
+        const sentinel = "BXG_WORKER_WASM_PROBE";
+        const probeClient = await createClient({
+          profile: { async load() { return null; }, async save() {}, async reset() {} },
+          transport: async () => { transportCalls++; throw new Error(sentinel); },
+          retryAttempts: 1,
+          deviceResets: 0,
+        });
+        for (let i = 0; i < 2; i++) {
+          try {
+            await probeClient.discover({ channel: "推荐" });
+            throw new Error("WASM probe unexpectedly completed without using the mock transport");
+          } catch (error) {
+            if (!String(error?.message || error).includes(sentinel)) throw error;
+          }
+        }
+        if (transportCalls < 2) throw new Error("WASM probe did not reach the JavaScript transport twice");
+        sdkState = "ready";
+        return json({ status: "ok", version: VERSION, runtime: runtimeName, sdk: sdkState, goCallbacks: "ok", transportCalls, wasm: runtimeDiagnostics() });
       }
       return json({ status: "ok", version: VERSION, runtime: runtimeName, sdk: sdkState });
     }
@@ -176,9 +303,11 @@ export async function onRequest(context) {
       return errorResponse(501, "LOCAL_NETWORK_REQUIRED", "电视接力需要家庭局域网内的 N1 或配套助手。");
     }
     const session = getSession(request);
-    const client = await getClient(session);
+    debugRecord(session, "info", "api.request", {
+      method: request.method, endpoint: describeEndpoint(parts)
+    });
     if (parts[0] === "discover") {
-      return json(await client.discover({
+      return json(await callClient(session, "discover", {
         channel: url.searchParams.get("channel") || "推荐",
         cursor: url.searchParams.get("cursor") || "",
       }));
@@ -186,22 +315,22 @@ export async function onRequest(context) {
     if (parts[0] === "search") {
       const q = url.searchParams.get("q") || "";
       if (!q.trim()) return json({ items: [], has_more: false, cursor: "" });
-      return json(await client.search(q, {
+      return json(await callClient(session, "search", q, {
         cursor: url.searchParams.get("cursor") || "",
         pageSize: 40,
         filters: mapSearchType(url.searchParams.get("type") || "all"),
       }));
     }
     if (parts[0] === "suggest") {
-      return json({ items: await client.suggest(url.searchParams.get("q") || "") });
+      return json({ items: await callClient(session, "suggest", url.searchParams.get("q") || "") });
     }
-    if (parts[0] === "hot-search") return json(await client.hotSearch());
+    if (parts[0] === "hot-search") return json(await callClient(session, "hotSearch"));
     if (parts[0] === "new-releases") {
       const date = url.searchParams.get("date") || new Date().toISOString().slice(0, 10).replace(/-/g, "");
-      return json(await client.newReleases({ date, cursor: url.searchParams.get("cursor") || "" }));
+      return json(await callClient(session, "newReleases", { date, cursor: url.searchParams.get("cursor") || "" }));
     }
     if (parts[0] === "rank") {
-      return json(await client.shortRank({
+      return json(await callClient(session, "shortRank", {
         content: url.searchParams.get("content") || "all",
         board: url.searchParams.get("board") || "",
         cursor: url.searchParams.get("cursor") || "",
@@ -210,18 +339,18 @@ export async function onRequest(context) {
     if (parts[0] === "series" && parts[1]) {
       const seriesId = parts[1];
       if (parts[2] === "detail") {
-        const rows = await client.getSeriesBatch([seriesId]);
+        const rows = await callClient(session, "getSeriesBatch", [seriesId]);
         if (!Array.isArray(rows) || !rows.length) return errorResponse(404, "SERIES_NOT_FOUND", "没有找到这部短剧。");
         return json(rows[0]);
       }
       if (parts[2] === "episodes") {
-        return json(await client.listEpisodes(seriesId, { cursor: url.searchParams.get("cursor") || "", pageSize: 100 }));
+        return json(await callClient(session, "listEpisodes", seriesId, { cursor: url.searchParams.get("cursor") || "", pageSize: 100 }));
       }
-      if (parts[2] === "seasons") return json(await client.seasons(seriesId));
-      if (parts.length === 2) return json(await client.getSeries(seriesId));
+      if (parts[2] === "seasons") return json(await callClient(session, "seasons", seriesId));
+      if (parts.length === 2) return json(await callClient(session, "getSeries", seriesId));
     }
     if (parts[0] === "play" && parts[1]) {
-      const result = await client.resolvePlayback(parts[1]);
+      const result = await callClient(session, "resolvePlayback", parts[1]);
       const data = selectStream(result, url.searchParams.get("quality") || "best");
       if (!data) return errorResponse(502, "PLAYBACK_EMPTY", "上游没有返回可用的视频流。");
       return json(data);
@@ -234,6 +363,12 @@ export async function onRequest(context) {
     const code = error && typeof error.code === "string" ? error.code : "UPSTREAM_ERROR";
     const raw = error && error.message ? String(error.message) : "未知错误";
     const message = raw.length > 240 ? raw.slice(0, 240) + "…" : raw;
+    if (typeof session !== "undefined") {
+      debugRecord(session, "error", "api.error", {
+        endpoint: describeEndpoint(parts), code, message: sanitizeDebugMessage(raw),
+        runtime: runtimeDiagnostics()
+      });
+    }
     return errorResponse(502, code, "片库请求失败：" + message);
   }
 }
