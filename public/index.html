@@ -11,8 +11,8 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/assets/icon-192.png">
   <title>贝小果 Lite · 短剧时间</title>
-  <link rel="stylesheet" href="/assets/app.css?v=0.1.12">
-  <script defer src="/assets/app.js?v=0.1.12"></script>
+  <link rel="stylesheet" href="/assets/app.css?v=0.1.13">
+  <script defer src="/assets/app.js?v=0.1.13"></script>
 </head>
 <body>
   <div class="app-shell">
@@ -29,6 +29,7 @@
       <div class="topbar-actions">
         <span class="lan-pill"><span></span> Cloudflare 边缘版</span>
         <button id="install-app-button" class="install-button" type="button" aria-label="添加贝小果到桌面">⇧ 添加到桌面</button>
+        <button id="route-button" class="settings-button route-button" type="button" aria-label="播放线路选择">↔ 播放线路</button>
         <button id="settings-button" class="settings-button" type="button" aria-label="部署教程">↗ 部署教程</button>
         <button id="debug-log-button" class="debug-button" type="button" aria-label="打开 DEBUG 运行日志">☷ DEBUG <span id="debug-log-count">0</span></button>
       </div>
@@ -78,7 +79,7 @@
     </main>
 
     <footer class="footer">
-      <span>贝小果 <b>0.1.12</b></span>
+      <span>贝小果 <b>0.1.13</b></span>
       <span>通过 Cloudflare 边缘网络提供服务 · 收藏与会话标识保存在当前浏览器</span>
     </footer>
   </div>
@@ -146,6 +147,37 @@
     </div>
   </dialog>
 
+  <dialog id="route-dialog" class="detail-dialog route-dialog">
+    <button id="route-dialog-close" class="dialog-close" type="button" aria-label="关闭">×</button>
+    <div class="detail-content">
+      <div class="section-kicker">NETWORK ROUTING</div>
+      <h2>播放线路</h2>
+      <p class="detail-meta">自选 Cloudflare 反代 IP。只填写 IP，端口固定为 443；线路列表仅保存在当前浏览器。</p>
+      <div id="route-domain-note" class="route-domain-note" role="note"></div>
+      <div class="route-current">当前选择：<strong id="route-current-label">默认线路（Cloudflare 自动）</strong></div>
+      <div id="route-list" class="route-list"></div>
+      <form id="route-add-form" class="route-add-form">
+        <h3>添加自选 IP</h3>
+        <div class="route-add-fields">
+          <label>线路名称（可选）<input id="route-name" type="text" maxlength="32" placeholder="例如：香港优选"></label>
+          <label>Cloudflare 反代 IP<input id="route-ip" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="45" placeholder="例如：47.117.10.164"></label>
+        </div>
+        <p class="route-hint">仅接受 IPv4 或 IPv6 地址，不填写端口、不填写域名；程序统一使用 443。最多保存 24 条。</p>
+        <button class="settings-primary" type="submit">添加并切换到此线路</button>
+      </form>
+      <p id="route-status" class="route-status" role="status" aria-live="polite">默认使用 Cloudflare 自动线路。</p>
+      <details class="route-rule-setup">
+        <summary>自选 IP 怎样真正生效？（一次性 Cloudflare 设置）</summary>
+        <p>Cloudflare 会过滤 Worker 直接返回的 <code>Alt-Svc</code>。要让浏览器按这里选择的 IP 建立连接，必须给 Pages／Worker 绑定你自己的橙云域名，并在该域名所在 Zone 创建下面两条 Response Header Transform Rules。<code>workers.dev</code> 和 <code>pages.dev</code> 默认域名不能配置这类 Zone 规则，因此只在默认域名上使用时，列表能保存，但不会切换网络入口。</p>
+        <ol>
+          <li>规则一：表达式 <code>(http.host eq "YOUR_HOSTNAME" and any(http.request.cookies["bxg_alt_ip"][*]))</code>；响应头选择 <code>Alt-Svc</code>，操作选择 <code>Set dynamic</code>，值为 <code>concat("h2=\"", http.request.cookies["bxg_alt_ip"][0], ":443\"; ma=300")</code>。</li>
+          <li>规则二：表达式 <code>(http.host eq "YOUR_HOSTNAME" and not any(http.request.cookies["bxg_alt_ip"][*]))</code>；响应头选择 <code>Alt-Svc</code>，操作选择 <code>Set static</code>，值为 <code>clear</code>，用于清除已选自定义 IP 并回到默认线路。</li>
+        </ol>
+        <p>把两处 <code>YOUR_HOSTNAME</code> 替换成实际自定义域名。选择线路后，贝小果会在本机设置 <code>bxg_alt_ip</code> Cookie；响应规则据此公告备用地址。浏览器只会在建立新连接时尝试切换，正在使用的连接不会被强制中断。反代 IP 还必须能以原网页域名完成 TLS/SNI 验证并支持 HTTP/2。</p>
+        <button id="route-copy-guide" class="settings-secondary" type="button">复制两条规则表达式</button>
+      </details>
+    </div>
+  </dialog>
   <dialog id="debug-dialog" class="detail-dialog debug-dialog">
     <button id="debug-dialog-close" class="dialog-close" type="button" aria-label="关闭">×</button>
     <div class="detail-content">
