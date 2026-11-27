@@ -20,16 +20,30 @@ function sanitizeDebugMessage(value) {
     .replace(/[A-Za-z0-9_-]{48,}/g, "[LONG_TOKEN]")
     .slice(0, 420);
 }
-function debugRecord(session, level, event, detail = {}) {
-  if (!session) return;
+function debugRecord(session, level, event, detail = {}, trace = null) {
   const now = Date.now();
+  const cleanDetail = {};
+  for (const [key, value] of Object.entries(detail || {})) {
+    if (typeof value === "string") cleanDetail[key] = sanitizeDebugMessage(value);
+    else if (value && typeof value === "object" && !Array.isArray(value)) {
+      cleanDetail[key] = Object.fromEntries(Object.entries(value).slice(0, 12).map(([k, v]) =>
+        [k, typeof v === "string" ? sanitizeDebugMessage(v) : (v == null || ["number","boolean"].includes(typeof v) ? v : "[object]")]
+      ));
+    } else if (value == null || ["number","boolean"].includes(typeof value)) cleanDetail[key] = value;
+  }
+  const entry = { time: new Date(now).toISOString(), level, event, ...cleanDetail };
+  if (Array.isArray(trace)) {
+    trace.push(entry);
+    if (trace.length > 32) trace.shift();
+  }
+  if (!session) return;
   for (const [key, bucket] of debugLogs) {
     if (now - bucket.updatedAt > DEBUG_LOG_TTL_MS) debugLogs.delete(key);
   }
   let bucket = debugLogs.get(session);
   if (!bucket) bucket = { updatedAt: now, events: [] };
   bucket.updatedAt = now;
-  bucket.events.push({ time: new Date(now).toISOString(), level, event, ...detail });
+  bucket.events.push(entry);
   if (bucket.events.length > MAX_DEBUG_EVENTS) bucket.events.splice(0, bucket.events.length - MAX_DEBUG_EVENTS);
   debugLogs.delete(session);
   debugLogs.set(session, bucket);
@@ -81,12 +95,12 @@ function getSession(request) {
   if (/^[a-zA-Z0-9._:-]{8,128}$/.test(value)) return value;
   return "bxg-edge-" + crypto.randomUUID();
 }
-function fetchTransport(session) {
+function fetchTransport(session, trace = null) {
   return async function sendTransport(req) {
     const startedAt = Date.now();
     let target = "upstream";
     try { const u = new URL(req.url); target = u.hostname + u.pathname; } catch (_) {}
-    debugRecord(session, "debug", "upstream.request", { method: req.method || "GET", target });
+    debugRecord(session, "debug", "upstream.request", { method: req.method || "GET", target }, trace);
     try {
   const headers = new Headers(req.headers || {});
   headers.delete("host");
@@ -119,12 +133,12 @@ function fetchTransport(session) {
   }
   debugRecord(session, response.ok ? "info" : "warn", "upstream.response", {
     target, status: response.status, durationMs: Date.now() - startedAt, bytes: bytes.byteLength
-  });
+  }, trace);
   return { status: response.status, headers: responseHeaders, cookies, body: bytes };
     } catch (error) {
       debugRecord(session, "error", "upstream.error", {
         target, durationMs: Date.now() - startedAt, message: sanitizeDebugMessage(error?.message || error)
-      });
+      }, trace);
       throw error;
     }
   };
@@ -149,9 +163,9 @@ function profileStore(session) {
     },
   };
 }
-async function getClient(session) {
+async function getClient(session, trace = null) {
   if (globalThis.__BXG_OPENHONGGUO_GO?.exited) {
-    debugRecord(session, "warn", "wasm.runtime.exited", runtimeDiagnostics());
+    debugRecord(session, "warn", "wasm.runtime.exited", runtimeDiagnostics(), trace);
     clients.clear();
   }
   const cached = clients.get(session);
@@ -160,23 +174,23 @@ async function getClient(session) {
     clients.set(session, cached);
     return cached;
   }
-  debugRecord(session, "info", "sdk.client.create", runtimeDiagnostics());
+  debugRecord(session, "info", "sdk.client.create", runtimeDiagnostics(), trace);
   const client = await createClient({
     profile: profileStore(session),
-    transport: fetchTransport(session),
-    log: (line) => debugRecord(session, "debug", "sdk.log", { message: sanitizeDebugMessage(line) }),
+    transport: fetchTransport(session, trace),
+    log: (line) => debugRecord(session, "debug", "sdk.log", { message: sanitizeDebugMessage(line) }, trace),
     timeoutMs: 25000,
     retryAttempts: 2,
     deviceResets: 1,
   });
-  debugRecord(session, "info", "sdk.client.ready", runtimeDiagnostics());
+  debugRecord(session, "info", "sdk.client.ready", runtimeDiagnostics(), trace);
   clients.set(session, client);
   trimMap(clients, MAX_CLIENTS);
   return client;
 }
-async function callClient(session, method, ...args) {
+async function callClient(session, method, trace, ...args) {
   for (let attempt = 0; attempt < 2; attempt++) {
-    const client = await getClient(session);
+    const client = await getClient(session, trace);
     try {
       return await client[method](...args);
     } catch (error) {
@@ -184,7 +198,7 @@ async function callClient(session, method, ...args) {
       if (attempt === 0 && /Go program has already exited/i.test(message)) {
         debugRecord(session, "error", "wasm.call.after-exit", {
           method, message, runtime: runtimeDiagnostics()
-        });
+        }, trace);
         // The SDK's module-scoped runtime promise may still point at a Go
         // instance whose callback trampoline is already dead. Mark it exited
         // so the next createClient() forces loadRuntime() to instantiate a
@@ -253,8 +267,37 @@ export async function onRequest(context) {
     try { return decodeURIComponent(part); } catch (_) { return part; }
   });
   let requestSession = "";
+  const requestTrace = [];
+  const traceId = crypto.randomUUID();
+  const requestStartedAt = Date.now();
+  function traced(response) {
+    const events = requestTrace.slice(-10);
+    let value = encodeURIComponent(JSON.stringify({ traceId, events }));
+    while (value.length > 5200 && events.length > 1) {
+      events.shift();
+      value = encodeURIComponent(JSON.stringify({ traceId, events }));
+    }
+    if (value.length > 5200) {
+      value = encodeURIComponent(JSON.stringify({ traceId, events: events.map(e => ({
+        time:e.time, level:e.level, event:e.event
+      })) }));
+    }
+    response.headers.set("X-BXG-Trace-ID", traceId);
+    response.headers.set("X-BXG-Debug", value);
+    response.headers.set("Server-Timing", "bxg;dur=" + (Date.now() - requestStartedAt));
+    return response;
+  }
+  function sendJson(data, status = 200, headers = {}) {
+    return traced(json(data, status, headers));
+  }
+  function sendError(status, code, message) {
+    return traced(errorResponse(status, code, message));
+  }
+  function sendResponse(response) {
+    return traced(response);
+  }
   try {
-    if (request.method === "OPTIONS") return new Response(null, { status: 204 });
+    if (request.method === "OPTIONS") return sendResponse(new Response(null, { status: 204 }));
     if (request.method !== "GET" && request.method !== "HEAD" && request.method !== "POST" && request.method !== "PUT" && request.method !== "DELETE") {
       return errorResponse(405, "METHOD_NOT_ALLOWED", "不支持的请求方法");
     }
@@ -262,8 +305,8 @@ export async function onRequest(context) {
       const session = getSession(request);
       if (request.method === "DELETE") {
         debugLogs.delete(session);
-        debugRecord(session, "info", "debug.logs.cleared");
-        return json({ ok: true });
+        debugRecord(session, "info", "debug.logs.cleared", {}, requestTrace);
+        return sendJson({ ok: true });
       }
       const bucket = debugLogs.get(session);
       if (bucket) {
@@ -273,12 +316,12 @@ export async function onRequest(context) {
       }
       const requestedLimit = Number(url.searchParams.get("limit")) || 160;
       const limit = Math.max(1, Math.min(240, requestedLimit));
-      return json({ events: bucket ? bucket.events.slice(-limit) : [], runtime: runtimeDiagnostics() });
+      return sendJson({ events: bucket ? bucket.events.slice(-limit) : [], runtime: runtimeDiagnostics() });
     }
     if (parts[0] === "health") {
       let sdkState = "not-loaded";
       if (url.searchParams.get("sdk") === "1") {
-        await getClient(getSession(request));
+        await getClient(getSession(request), requestTrace);
         sdkState = "ready";
       }
       if (url.searchParams.get("sdk") === "probe" && context.env?.BXG_SMOKE_TEST === "1") {
@@ -300,54 +343,54 @@ export async function onRequest(context) {
         }
         if (transportCalls < 2) throw new Error("WASM probe did not reach the JavaScript transport twice");
         sdkState = "ready";
-        return json({ status: "ok", version: VERSION, runtime: runtimeName, sdk: sdkState, goCallbacks: "ok", transportCalls, wasm: runtimeDiagnostics() });
+        return sendJson({ status: "ok", version: VERSION, runtime: runtimeName, sdk: sdkState, goCallbacks: "ok", transportCalls, wasm: runtimeDiagnostics() });
       }
-      return json({ status: "ok", version: VERSION, runtime: runtimeName, sdk: sdkState });
+      return sendJson({ status: "ok", version: VERSION, runtime: runtimeName, sdk: sdkState });
     }
-    if (parts[0] === "playback" && parts[1] === "activity") return json({ ok: true });
+    if (parts[0] === "playback" && parts[1] === "activity") return sendJson({ ok: true });
     if (parts[0] === "settings") {
-      if (request.method === "PUT") return json({ ok: true, message: "Cloudflare 轻量版不使用 N1 服务端缓存设置。" });
-      return json({ settings: {}, preheat: { running: false, phase: "Cloudflare 轻量版按需处理请求，不运行常驻预热" }, cache: {} });
+      if (request.method === "PUT") return sendJson({ ok: true, message: "Cloudflare 轻量版不使用 N1 服务端缓存设置。" });
+      return sendJson({ settings: {}, preheat: { running: false, phase: "Cloudflare 轻量版按需处理请求，不运行常驻预热" }, cache: {} });
     }
     if (parts[0] === "preheat" && parts[1] === "run") {
-      return errorResponse(501, "NOT_SUPPORTED", "Cloudflare 轻量版不运行常驻预热任务。");
+      return sendError(501, "NOT_SUPPORTED", "Cloudflare 轻量版不运行常驻预热任务。");
     }
     if (parts[0] === "tv" && parts[1] === "devices") {
-      return json({ devices: [], message: "公共边缘函数不能直接执行家庭局域网 mDNS 发现。" });
+      return sendJson({ devices: [], message: "公共边缘函数不能直接执行家庭局域网 mDNS 发现。" });
     }
     if (parts[0] === "tv" && parts[1] === "handoff") {
-      return errorResponse(501, "LOCAL_NETWORK_REQUIRED", "电视接力需要家庭局域网内的 N1 或配套助手。");
+      return sendError(501, "LOCAL_NETWORK_REQUIRED", "电视接力需要家庭局域网内的 N1 或配套助手。");
     }
     const session = getSession(request);
     requestSession = session;
     debugRecord(session, "info", "api.request", {
       method: request.method, endpoint: describeEndpoint(parts)
-    });
+    }, requestTrace);
     if (parts[0] === "discover") {
-      return json(await callClient(session, "discover", {
+      return sendJson(await callClient(session, "discover", requestTrace, {
         channel: url.searchParams.get("channel") || "推荐",
         cursor: url.searchParams.get("cursor") || "",
       }));
     }
     if (parts[0] === "search") {
       const q = url.searchParams.get("q") || "";
-      if (!q.trim()) return json({ items: [], has_more: false, cursor: "" });
-      return json(await callClient(session, "search", q, {
+      if (!q.trim()) return sendJson({ items: [], has_more: false, cursor: "" });
+      return sendJson(await callClient(session, "search", requestTrace, q, {
         cursor: url.searchParams.get("cursor") || "",
         pageSize: 40,
         filters: mapSearchType(url.searchParams.get("type") || "all"),
       }));
     }
     if (parts[0] === "suggest") {
-      return json({ items: await callClient(session, "suggest", url.searchParams.get("q") || "") });
+      return sendJson({ items: await callClient(session, "suggest", requestTrace, url.searchParams.get("q") || "") });
     }
-    if (parts[0] === "hot-search") return json(await callClient(session, "hotSearch"));
+    if (parts[0] === "hot-search") return sendJson(await callClient(session, "hotSearch", requestTrace));
     if (parts[0] === "new-releases") {
       const date = url.searchParams.get("date") || new Date().toISOString().slice(0, 10).replace(/-/g, "");
-      return json(await callClient(session, "newReleases", { date, cursor: url.searchParams.get("cursor") || "" }));
+      return sendJson(await callClient(session, "newReleases", requestTrace, { date, cursor: url.searchParams.get("cursor") || "" }));
     }
     if (parts[0] === "rank") {
-      return json(await callClient(session, "shortRank", {
+      return sendJson(await callClient(session, "shortRank", requestTrace, {
         content: url.searchParams.get("content") || "all",
         board: url.searchParams.get("board") || "",
         cursor: url.searchParams.get("cursor") || "",
@@ -356,26 +399,26 @@ export async function onRequest(context) {
     if (parts[0] === "series" && parts[1]) {
       const seriesId = parts[1];
       if (parts[2] === "detail") {
-        const rows = await callClient(session, "getSeriesBatch", [seriesId]);
-        if (!Array.isArray(rows) || !rows.length) return errorResponse(404, "SERIES_NOT_FOUND", "没有找到这部短剧。");
-        return json(rows[0]);
+        const rows = await callClient(session, "getSeriesBatch", requestTrace, [seriesId]);
+        if (!Array.isArray(rows) || !rows.length) return sendError(404, "SERIES_NOT_FOUND", "没有找到这部短剧。");
+        return sendJson(rows[0]);
       }
       if (parts[2] === "episodes") {
-        return json(await callClient(session, "listEpisodes", seriesId, { cursor: url.searchParams.get("cursor") || "", pageSize: 100 }));
+        return sendJson(await callClient(session, "listEpisodes", requestTrace, seriesId, { cursor: url.searchParams.get("cursor") || "", pageSize: 100 }));
       }
-      if (parts[2] === "seasons") return json(await callClient(session, "seasons", seriesId));
-      if (parts.length === 2) return json(await callClient(session, "getSeries", seriesId));
+      if (parts[2] === "seasons") return sendJson(await callClient(session, "seasons", requestTrace, seriesId));
+      if (parts.length === 2) return sendJson(await callClient(session, "getSeries", requestTrace, seriesId));
     }
     if (parts[0] === "play" && parts[1]) {
-      const result = await callClient(session, "resolvePlayback", parts[1]);
+      const result = await callClient(session, "resolvePlayback", requestTrace, parts[1]);
       const data = selectStream(result, url.searchParams.get("quality") || "best");
-      if (!data) return errorResponse(502, "PLAYBACK_EMPTY", "上游没有返回可用的视频流。");
-      return json(data);
+      if (!data) return sendError(502, "PLAYBACK_EMPTY", "上游没有返回可用的视频流。");
+      return sendJson(data);
     }
     if (parts[0] === "images" && parts[1]) {
       return errorResponse(501, "IMAGE_PROXY_NOT_NEEDED", "Cloudflare 轻量版直接加载上游封面地址。");
     }
-    return errorResponse(404, "NOT_FOUND", "找不到这个 API 路径。");
+    return sendError(404, "NOT_FOUND", "找不到这个 API 路径。");
   } catch (error) {
     const code = error && typeof error.code === "string" ? error.code : "UPSTREAM_ERROR";
     const raw = error && error.message ? String(error.message) : "未知错误";
@@ -384,8 +427,8 @@ export async function onRequest(context) {
       debugRecord(requestSession, "error", "api.error", {
         endpoint: describeEndpoint(parts), code, message: sanitizeDebugMessage(raw),
         runtime: runtimeDiagnostics()
-      });
+      }, requestTrace);
     }
-    return errorResponse(502, code, "片库请求失败：" + message);
+    return sendError(502, code, "片库请求失败：" + message);
   }
 }
