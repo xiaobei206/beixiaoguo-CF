@@ -3,7 +3,7 @@ import { createClient, SearchFilter } from "openhongguo";
 import { ensureCencRuntime } from "../../cenc-runtime.js";
 import { openMediaSession, parseByteRange, parseContentRange, safeMediaSource, sealMediaSession } from "../../media-session.js";
 
-const VERSION = "0.1.10";
+const VERSION = "0.1.11";
 const MAX_CLIENTS = 128;
 const MAX_PROFILES = 256;
 const clients = new Map();
@@ -686,7 +686,7 @@ export async function onRequest(context) {
       const episodeIds = [...new Set(rawIds.map((value) => String(value || "").trim())
         .filter((value) => value && value.length <= 128))];
       if (!episodeIds.length) return sendJson({ items: [], requested: 0, ready: 0 });
-      if (episodeIds.length > 16) return sendError(400, "PREFETCH_LIMIT", "单次最多预读 16 集。");
+      if (episodeIds.length > 6) return sendError(400, "PREFETCH_LIMIT", "单次最多预解析 6 集。");
       const quality = String(payload?.quality || "best").slice(0, 32);
       const secret = context.env?.BXG_MEDIA_SECRET;
       const items = [];
