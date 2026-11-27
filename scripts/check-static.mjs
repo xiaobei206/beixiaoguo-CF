@@ -16,6 +16,9 @@ if (routes.version !== 1 || !routes.include?.includes("/api/*")) throw new Error
 const version = (await readFile("VERSION", "utf8")).trim();
 const packageInfo = JSON.parse(await readFile("package.json", "utf8"));
 const worker = await readFile("functions/api/v1/[[path]].js", "utf8");
+const patcher = await readFile("scripts/patch-openhongguo.mjs", "utf8");
+const sdkSmoke = await readFile("scripts/smoke-sdk.mjs", "utf8");
+const workerSmoke = await readFile("scripts/smoke-worker-runtime.mjs", "utf8");
 const wrangler = JSON.parse(await readFile("wrangler.jsonc", "utf8"));
 const workerWrangler = JSON.parse(await readFile("wrangler.worker.jsonc", "utf8"));
 if (packageInfo.version !== version) throw new Error("package.json version does not match VERSION");
@@ -30,6 +33,11 @@ if (!html.includes("/assets/app.css?v=" + version)) throw new Error("HTML CSS ve
 if (!html.includes("Cloudflare 边缘版") || html.includes("家庭局域网") || html.includes("只在你的家庭网络中提供服务")) throw new Error("Cloudflare homepage must not describe the public edge deployment as LAN-only");
 if (!html.includes('aria-label="部署教程"') || !html.includes("Cloudflare 部署教程")) throw new Error("Homepage must expose the Cloudflare deployment guide");
 if (!js.includes("docs/deploy-cloudflare-cn.md") || !js.includes("Connect to Git")) throw new Error("Homepage deployment guide must link to the full tutorial and explain Pages Git setup");
+if (!html.includes('id="debug-log-button"') || !html.includes('id="debug-dialog"') || !html.includes('id="debug-copy"')) throw new Error("Homepage must expose the DEBUG log viewer and copy action");
+if (!js.includes("DEBUG_STORAGE_KEY") || !js.includes("api.response.error") || !js.includes("window.unhandledrejection") || !js.includes("image.url.rejected")) throw new Error("Frontend DEBUG logging must capture API, runtime and image failures");
+if (!worker.includes('parts[0] === "debug" && parts[1] === "logs"') || !worker.includes('debugRecord(session, "debug", "upstream.request"') || !worker.includes('runtimeDiagnostics()')) throw new Error("Edge DEBUG endpoint must expose session-scoped request and WASM diagnostics");
+if (!patcher.includes("__BXG_OPENHONGGUO_GO") || !patcher.includes("Go runtime recovery") || !patcher.includes("Go runtime exit monitor")) throw new Error("Go/WASM runtime recovery and exit monitoring patch is missing");
+if (!sdkSmoke.includes("client.discover") || !sdkSmoke.includes("twice") || !workerSmoke.includes("sdk=probe") || !workerSmoke.includes("goCallbacks")) throw new Error("CI must exercise repeated Go-to-JavaScript calls, not only SDK initialization");
 if (!html.includes("贝小果 <b>" + version + "</b>")) throw new Error("HTML footer version does not match VERSION");
 if (!manifest.name.includes("贝小果")) throw new Error("PWA manifest has an unexpected name");
 if (!js.includes("X-BXG-Session")) throw new Error("API calls must include anonymous session ID");
