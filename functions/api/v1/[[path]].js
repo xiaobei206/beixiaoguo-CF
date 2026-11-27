@@ -380,7 +380,7 @@ async function prewarmProtectedMedia(token,mediaUrl,env,debugSession,trace,runti
     await cache.put(key,response);
     const verified=await cache.match(key);
     if(!verified){debugRecord(debugSession,"warn","media.edge-cache.fill-not-stored",{bytes:size},trace);return "not-stored";}
-    debugRecord(debugSession,"info","media.edge-cache.ready",{bytes:size,ttlSeconds:Number((verified.headers.get("Cache-Control")||"").match(/max-age=(\\d+)/)?.[1])||0},trace);
+    debugRecord(debugSession,"info","media.edge-cache.ready",{bytes:size,ttlSeconds:Number((verified.headers.get("Cache-Control")||"").match(/max-age=(\d+)/)?.[1])||0},trace);
     return "stored";
   }catch(error){try{await response.body?.cancel();}catch(_){}debugRecord(debugSession,"warn","media.edge-cache.fill-failed",{bytes:size,message:sanitizeDebugMessage(error?.message||error)},trace);return "fill-failed";}
 }
