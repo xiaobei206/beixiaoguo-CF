@@ -222,6 +222,96 @@ async function callClient(session, method, trace, ...args) {
   }
   throw new Error("Go/WASM runtime 重启后仍无法完成调用");
 }
+async function proxyCoverImage(rawUrl, method, session, trace) {
+  const parseTarget = (value) => {
+    const target = new URL(value);
+    const host = target.hostname.toLowerCase();
+    if (target.protocol !== "https:" || target.username || target.password || target.port ||
+        !(host === "fqnovelpic.com" || host.endsWith(".fqnovelpic.com"))) {
+      throw new Error("封面地址不属于允许的 HTTPS 图片域名");
+    }
+    return target;
+  };
+  let target;
+  try { target = parseTarget(rawUrl); }
+  catch (error) {
+    debugRecord(session, "warn", "image.proxy.rejected", { message: error.message }, trace);
+    return errorResponse(400, "IMAGE_URL_REJECTED", error.message);
+  }
+  const startedAt = Date.now();
+  for (let redirectCount = 0; redirectCount <= 3; redirectCount++) {
+    let response;
+    try {
+      response = await fetch(target.href, {
+        method: method === "HEAD" ? "HEAD" : "GET",
+        headers: { "Accept": "image/avif,image/webp,image/apng,image/jpeg,image/png,image/*;q=0.8" },
+        redirect: "manual",
+        signal: AbortSignal.timeout(15000),
+      });
+    } catch (error) {
+      debugRecord(session, "error", "image.proxy.fetch.error", {
+        host: target.hostname, durationMs: Date.now() - startedAt,
+        message: sanitizeDebugMessage(error?.message || error)
+      }, trace);
+      return errorResponse(502, "IMAGE_UPSTREAM_FETCH", "Cloudflare 获取上游封面失败：" + sanitizeDebugMessage(error?.message || error));
+    }
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get("location");
+      if (!location || redirectCount === 3) {
+        debugRecord(session, "error", "image.proxy.redirect.rejected", {
+          host: target.hostname, status: response.status, durationMs: Date.now() - startedAt
+        }, trace);
+        return errorResponse(502, "IMAGE_REDIRECT_LIMIT", "上游封面重定向次数过多或缺少 Location。");
+      }
+      try { target = parseTarget(new URL(location, target).href); }
+      catch (error) {
+        debugRecord(session, "error", "image.proxy.redirect.rejected", {
+          host: target.hostname, status: response.status, message: error.message
+        }, trace);
+        return errorResponse(502, "IMAGE_REDIRECT_HOST", "上游封面重定向到了未允许的域名。");
+      }
+      continue;
+    }
+    const contentType = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+    const length = Number(response.headers.get("content-length")) || 0;
+    if (!response.ok) {
+      debugRecord(session, "warn", "image.proxy.upstream.response", {
+        host: target.hostname, status: response.status, contentType, durationMs: Date.now() - startedAt
+      }, trace);
+      return errorResponse(502, "IMAGE_UPSTREAM_HTTP", "上游图片服务器返回 HTTP " + response.status);
+    }
+    if (!/^image\/(avif|webp|jpeg|png|gif)$/.test(contentType)) {
+      debugRecord(session, "warn", "image.proxy.invalid-content-type", {
+        host: target.hostname, status: response.status, contentType
+      }, trace);
+      return errorResponse(502, "IMAGE_CONTENT_TYPE", "上游响应不是受支持的图片格式。");
+    }
+    if (length > (10 << 20)) return errorResponse(413, "IMAGE_TOO_LARGE", "上游封面超过 10 MiB 限制。");
+    let body = null;
+    if (method !== "HEAD") {
+      const bytes = await response.arrayBuffer();
+      if (bytes.byteLength > (10 << 20)) return errorResponse(413, "IMAGE_TOO_LARGE", "上游封面超过 10 MiB 限制。");
+      body = bytes;
+    }
+    const headers = new Headers({
+      "Content-Type": contentType,
+      "Cache-Control": "public, max-age=300, stale-while-revalidate=3600",
+      "X-Content-Type-Options": "nosniff",
+      "X-BXG-Image-Proxy": "1",
+    });
+    for (const name of ["etag", "last-modified"]) {
+      const value = response.headers.get(name);
+      if (value) headers.set(name, value);
+    }
+    debugRecord(session, "info", "image.proxy.success", {
+      host: target.hostname, status: response.status, contentType,
+      bytes: body ? body.byteLength : 0, durationMs: Date.now() - startedAt
+    }, trace);
+    return new Response(body, { status: 200, headers });
+  }
+  return errorResponse(502, "IMAGE_PROXY_FAILED", "无法取得封面。");
+}
+
 function mapSearchType(value) {
   switch (value) {
     case "short": return [SearchFilter.ShortPlay];
@@ -415,8 +505,11 @@ export async function onRequest(context) {
       if (!data) return sendError(502, "PLAYBACK_EMPTY", "上游没有返回可用的视频流。");
       return sendJson(data);
     }
-    if (parts[0] === "images" && parts[1]) {
-      return errorResponse(501, "IMAGE_PROXY_NOT_NEEDED", "Cloudflare 轻量版直接加载上游封面地址。");
+    if (parts[0] === "images") {
+      const imageUrl = url.searchParams.get("url") || "";
+      if (!imageUrl) return sendError(400, "IMAGE_URL_REQUIRED", "缺少封面 URL。");
+      const imageResponse = await proxyCoverImage(imageUrl, request.method, session, requestTrace);
+      return sendResponse(imageResponse);
     }
     return sendError(404, "NOT_FOUND", "找不到这个 API 路径。");
   } catch (error) {
