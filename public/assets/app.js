@@ -26,6 +26,7 @@
   let debugEntries = loadDebugEntries();
   let serverDebugEntries = [];
   let serverDebugRuntime = null;
+  let imageProbeStarted = false;
   function todayDateKey() {
     const now = new Date();
     return String(now.getFullYear()) + String(now.getMonth() + 1).padStart(2, "0") + String(now.getDate()).padStart(2, "0");
@@ -73,7 +74,7 @@
 
   function safeImage(value) {
     const raw = String(value || "").trim();
-    if (/^\/api\/v1\/images\/[a-f0-9]{32}$/i.test(raw)) return raw;
+    if (/^\/api\/v1\/images(?:\?|\/)/i.test(raw)) return raw;
     if (!raw) return "";
     try {
       const parsed = new URL(raw, window.location.origin);
@@ -89,8 +90,15 @@
         debugWrite("warn", "image.url.rejected", {reason:"same-origin-absolute",host:parsed.hostname});
         return "";
       }
+      const host = parsed.hostname.toLowerCase();
+      if (host === "fqnovelpic.com" || host.endsWith(".fqnovelpic.com")) {
+        const proxy = new URL("/api/v1/images", window.location.origin);
+        proxy.searchParams.set("url", parsed.href);
+        return proxy.pathname + proxy.search;
+      }
       return parsed.href;
     } catch (_) {
+      debugWrite("warn", "image.url.rejected", {reason:"invalid-url"});
       return "";
     }
   }
@@ -185,6 +193,36 @@
     const count = $("#debug-log-count");
     if (count) count.textContent = String(debugEntries.length + serverDebugEntries.length);
     if ($("#debug-dialog") && $("#debug-dialog").open) renderDebugPanel();
+  }
+
+  function captureEdgeTrace(response) {
+    const raw = response && response.headers ? response.headers.get("X-BXG-Debug") : "";
+    const traceId = response && response.headers ? (response.headers.get("X-BXG-Trace-ID") || "") : "";
+    if (!raw) {
+      if (traceId) debugWrite("debug", "edge.trace.missing", {traceId,status:response.status});
+      return;
+    }
+    try {
+      const payload = JSON.parse(decodeURIComponent(raw));
+      for (const event of payload.events || []) {
+        const detail = Object.assign({}, event);
+        delete detail.time;
+        delete detail.level;
+        delete detail.event;
+        debugWrite(event.level || "debug", "edge." + (event.event || "event"), {
+          traceId:payload.traceId || traceId,
+          edgeTime:event.time || "",
+          detail:JSON.stringify(detail).slice(0, 520)
+        });
+      }
+      debugWrite("debug", "edge.trace.received", {
+        traceId:payload.traceId || traceId,
+        events:(payload.events || []).length,
+        status:response.status
+      });
+    } catch (error) {
+      debugWrite("warn", "edge.trace.parse-failed", {traceId,status:response.status,message:error.message || error});
+    }
   }
 
   function summarizePayload(path, payload) {
@@ -299,6 +337,7 @@
       let response;
       try {
         response = await fetch(path, Object.assign({}, options, {headers}));
+        captureEdgeTrace(response);
       } catch (error) {
         debugWrite("error", "api.network.error", {method,endpoint,durationMs:Date.now() - startedAt,message:error.message || error});
         throw error;
@@ -463,7 +502,25 @@
     if (!image || image.tagName !== "IMG") return;
     let imageHost = "";
     try { imageHost = new URL(image.currentSrc || image.src).hostname; } catch (_) {}
-    debugWrite("warn", "image.load.error", {host:imageHost, retryCount:Number(image.dataset.retryCount) || 0});
+    const originalHost = (() => {
+      try { return new URL(image.dataset.originalSrc || image.currentSrc || image.src, window.location.origin).hostname; }
+      catch (_) { return ""; }
+    })();
+    debugWrite("warn", "image.load.error", {
+      proxyHost:imageHost, sourceHost:originalHost, retryCount:Number(image.dataset.retryCount) || 0
+    });
+    if (!imageProbeStarted && /^\\/api\\/v1\\/images\\?/i.test(image.currentSrc || image.src)) {
+      imageProbeStarted = true;
+      const probeUrl = image.currentSrc || image.src;
+      fetch(probeUrl, {method:"HEAD",headers:{"X-BXG-Session":playbackClientId}})
+        .then((response) => {
+          captureEdgeTrace(response);
+          debugWrite(response.ok ? "info" : "error", "image.proxy.head-probe", {
+            status:response.status, contentType:response.headers.get("Content-Type") || ""
+          });
+        })
+        .catch((error) => debugWrite("error", "image.proxy.head-probe.failed", {message:error.message || error}));
+    }
     const attempts = Number(image.dataset.retryCount) || 0;
     if (attempts < 1) {
       image.dataset.retryCount = String(attempts + 1);
