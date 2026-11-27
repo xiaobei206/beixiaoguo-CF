@@ -42,10 +42,11 @@ for (const [original, replacement, description] of [
   [wasmLine, patchedWasm, "WASM binary loader"],
   [instantiateLine, patchedInstantiate, "WASM instantiation result"]
 ]) {
+  if (source.includes(replacement)) continue;
   if (source.includes(original)) {
     source = source.replace(original, replacement);
     changed = true;
-  } else if (!source.includes(replacement)) {
+  } else {
     throw new Error("openhongguo " + description + " changed; refusing to patch an unknown SDK version.");
   }
 }
