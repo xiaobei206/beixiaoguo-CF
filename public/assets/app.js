@@ -27,7 +27,6 @@
   const MAX_DEBUG_ENTRIES = 180;
   const ROUTE_LIST_STORAGE_KEY = "beixiaoguo.cf.alt-routes";
   const ROUTE_ACTIVE_STORAGE_KEY = "beixiaoguo.cf.alt-route-selected";
-  const ROUTE_COOKIE_NAME = "bxg_alt_ip";
   const MAX_ROUTE_ENTRIES = 24;
   let routeEntries = loadRouteEntries();
   let activeRouteId = loadActiveRouteId();
@@ -171,15 +170,6 @@
     return String(ip).includes(":") ? "[" + ip + "]" : String(ip);
   }
 
-  function setRouteCookie(ip) {
-    if (!window.isSecureContext) return false;
-    const authority = ip ? routeAuthority(ip) : "";
-    const cookiePath = "; Path=/; SameSite=Lax; Secure";
-    if (authority) document.cookie = ROUTE_COOKIE_NAME + "=" + authority + cookiePath + "; Max-Age=31536000";
-    else document.cookie = ROUTE_COOKIE_NAME + "=; Path=/; SameSite=Lax; Secure; Max-Age=0";
-    return true;
-  }
-
   function usesCloudflareManagedHostname() {
     const host = String(window.location.hostname || "").toLowerCase();
     return host.endsWith(".workers.dev") || host.endsWith(".pages.dev");
@@ -222,7 +212,7 @@
 
   async function announceActiveRoute(ip, quiet) {
     if (!window.isSecureContext) {
-      renderRouteStatus("自选线路需要 HTTPS 安全上下文；当前页面无法设置线路 Cookie。", "warn");
+      renderRouteStatus("自选线路需要 HTTPS 安全上下文；当前页面不能公告备用 HTTPS 服务。", "warn");
       return false;
     }
     if (usesCloudflareManagedHostname()) {
@@ -234,7 +224,8 @@
       return false;
     }
     try {
-      const response = await fetch("/api/v1/route?refresh=" + Date.now(), {
+      const routeValue = ip || "auto";
+      const response = await fetch("/api/v1/route?alt_ip=" + routeValue + "&refresh=" + Date.now(), {
         method:"GET", cache:"no-store",
         headers:{"Accept":"application/json","X-BXG-Session":playbackClientId}
       });
@@ -276,7 +267,6 @@
     activeRouteId = id;
     saveRoutePreferences();
     const active = getActiveRoute();
-    setRouteCookie(active ? active.ip : "");
     renderRouteDialog();
     await announceActiveRoute(active ? active.ip : "", false);
   }
@@ -304,7 +294,6 @@
     saveRoutePreferences();
     $("#route-name").value = "";
     $("#route-ip").value = "";
-    setRouteCookie(ip);
     renderRouteDialog();
     await announceActiveRoute(ip, false);
   }
@@ -316,7 +305,6 @@
     saveRoutePreferences();
     renderRouteDialog();
     if (wasActive) {
-      setRouteCookie("");
       await announceActiveRoute("", false);
     }
   }
@@ -324,20 +312,25 @@
   async function copyRouteRuleGuide() {
     const guide = [
       "Cloudflare → Rules → Transform Rules → Response Header Transform Rules",
-      "规则 1（自选 IP）",
-      '匹配表达式：(http.host eq "YOUR_HOSTNAME" and any(http.request.cookies["bxg_alt_ip"][*]))',
+      "规则 1（IPv4）",
+      '(http.host eq "YOUR_HOSTNAME" and http.request.uri.path eq "/api/v1/route" and len(http.request.uri.args["alt_ip"][0]) gt 0 and http.request.uri.args["alt_ip"][0] ne "auto" and not (http.request.uri.args["alt_ip"][0] contains ":"))',
       "响应头：Alt-Svc；操作：Set dynamic",
-      '值：concat("h2=\\"", http.request.cookies["bxg_alt_ip"][0], ":443\\\"; ma=300")',
+      '值：concat("h2=\\\"", http.request.uri.args["alt_ip"][0], ":443\\\"; ma=300")',
       "",
-      "规则 2（默认线路）",
-      '(http.host eq "YOUR_HOSTNAME" and not any(http.request.cookies["bxg_alt_ip"][*]))',
+      "规则 2（IPv6）",
+      '(http.host eq "YOUR_HOSTNAME" and http.request.uri.path eq "/api/v1/route" and http.request.uri.args["alt_ip"][0] contains ":")',
+      "响应头：Alt-Svc；操作：Set dynamic",
+      '值：concat("h2=\\\"[", http.request.uri.args["alt_ip"][0], "]:443\\\"; ma=300")',
+      "",
+      "规则 3（默认线路）",
+      '(http.host eq "YOUR_HOSTNAME" and http.request.uri.path eq "/api/v1/route" and http.request.uri.args["alt_ip"][0] eq "auto")',
       "响应头：Alt-Svc；操作：Set static；值：clear",
       "",
-      "将 YOUR_HOSTNAME 替换为自定义橙云域名。workers.dev/pages.dev 不能使用 Zone Transform Rules。"
+      "将 YOUR_HOSTNAME 替换为自定义橙云域名。此方案使用 URI 查询参数，不依赖 Pro 版 http.request.cookies 字段；workers.dev/pages.dev 不能使用 Zone Transform Rules。"
     ].join("\n");
     try {
       await navigator.clipboard.writeText(guide);
-      showToast("两条 Cloudflare 规则说明已复制");
+      showToast("三条 Cloudflare 规则说明已复制");
     } catch (_) {
       const field = document.createElement("textarea");
       field.value = guide;
@@ -345,7 +338,7 @@
       field.style.opacity = "0";
       document.body.appendChild(field);
       field.select();
-      try { document.execCommand("copy"); showToast("两条 Cloudflare 规则说明已复制"); }
+      try { document.execCommand("copy"); showToast("三条 Cloudflare 规则说明已复制"); }
       catch (_) { showToast("复制失败，请展开规则说明手动复制"); }
       field.remove();
     }
@@ -2630,7 +2623,6 @@
   window.addEventListener("pagehide", () => setPlaybackActivity(false));
 
   const savedRoute = getActiveRoute();
-  setRouteCookie(savedRoute ? savedRoute.ip : "");
   if (savedRoute && !usesCloudflareManagedHostname()) {
     announceActiveRoute(savedRoute.ip, true).finally(() => loadView("discover", false));
   } else {
