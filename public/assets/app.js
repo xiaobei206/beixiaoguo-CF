@@ -21,7 +21,7 @@
   let settingsRefreshTimer = 0;
   let deferredInstallPrompt = null;
   const DEBUG_STORAGE_KEY = "beixiaoguo.cf.debug-log";
-  const APP_VERSION = "0.1.5";
+  const APP_VERSION = "0.1.6";
   const MAX_DEBUG_ENTRIES = 180;
   let debugEntries = loadDebugEntries();
   let serverDebugEntries = [];
