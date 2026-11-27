@@ -2,7 +2,7 @@
 
 贝小果的 Cloudflare 轻量化版本。静态网页可部署在 Cloudflare Pages 或 Workers Static Assets，匿名片库请求由边缘函数按需处理，不需要自管 VPS 或数据库。
 
-当前开发版本：0.1.8
+当前开发版本：0.1.9
 
 ## 开发原则
 
@@ -46,6 +46,11 @@
 - 移除播放器中残留的“CENC 尚未迁移”硬编码提示，明确区分前后端部署版本不一致和真实媒体播放故障。
 - HTML 静态资源缓存版本、API 诊断版本、`VERSION` 与 `package.json` 统一到 0.1.8。
 - CI 静态检查阻止旧提示回归。
+
+## 0.1.9：Secret 配置诊断
+
+- `MEDIA_SECRET_REQUIRED` 根据实际处理请求的运行时，分别提示 Cloudflare Pages 项目或 Cloudflare Worker 的配置入口。
+- 文档列出 Pages 与 Workers 各自的 Dashboard 和 Wrangler 设置方法，并强调各部署环境需要分别配置 Secret。
 
 ## 文档
 

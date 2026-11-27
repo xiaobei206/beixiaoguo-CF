@@ -9,7 +9,7 @@
 
 ## 当前版本
 
-**0.1.8 — 2026-11-27**
+**0.1.9 — 2026-11-27**
 
 - 已迁移原版 UI/PWA 资源。
 - 已接入 openhongguo Node.js/WASM SDK；0.1.2 采用预编译 `WebAssembly.Module`。CI 可验证 Pages 和 Workers 本地运行时 SDK 初始化；运行时烟雾测试不代表真实上游接口、受保护视频流或电视接力已验收。
@@ -45,3 +45,10 @@
 - 修复播放器遗留的旧硬编码提示；后端若返回受保护标记却没有同源媒体地址，会明确提示更新 Cloudflare 部署，而不会谎称边缘解密尚未开发。
 - 统一 HTML 资源缓存、API 诊断、`VERSION` 和 `package.json` 版本号。
 - 静态检查新增回归规则，避免旧提示再次进入发布构建。
+
+
+## 0.1.9：Secret 配置诊断
+
+- `MEDIA_SECRET_REQUIRED` 错误按 Pages Functions／Workers 运行时显示对应控制台路径，避免 Pages 环境仍被提示去找“Worker Secrets”。
+- 补齐 Pages `wrangler pages secret put` 与 Workers `wrangler secret put` 两条命令。
+- Pages Production／Preview 和独立 Worker 的 Secret 分别配置；代码不会自动同步账号中的 Secret。

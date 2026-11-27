@@ -18,6 +18,8 @@ if (routes.version !== 1 || !routes.include?.includes("/api/*")) throw new Error
 const version = (await readFile("VERSION", "utf8")).trim();
 const packageInfo = JSON.parse(await readFile("package.json", "utf8"));
 const worker = await readFile("functions/api/v1/[[path]].js", "utf8");
+if (worker.includes("Cloudflare Worker Secrets 中配置 BXG_MEDIA_SECRET")) throw new Error("Secret error still uses the generic Worker-only wording.");
+if (!worker.includes("mediaSecretSetupMessage(runtimeName)") || !worker.includes("Pages 和独立 Worker 的 Secrets 不会自动共享")) throw new Error("Secret error must explain runtime-specific setup and independent environments.");
 const workerRuntime = await readFile("functions/openhongguo-runtime.js", "utf8");
 const cencRuntime = await readFile("functions/cenc-runtime.js", "utf8");
 const cencSource = await readFile("edge-cenc/cenc/layout.go", "utf8");

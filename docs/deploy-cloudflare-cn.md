@@ -134,15 +134,31 @@ Worker 会使用配置名 `beixiaoguo-cf-worker`，静态资源走 Workers Stati
 
 ## 启用受保护 CENC 视频
 
-Cloudflare 版的渐进式 MP4 CENC AES-CTR 边缘 Range 处理需要一个专用 Secret，用于加密和解密跨 isolate 的短时播放会话令牌。在 Cloudflare Dashboard 的 Workers & Pages 中，为实际部署入口添加 Secret：若使用 Workers，打开对应 Worker → Settings → Variables and Secrets；若使用 Pages，打开 Pages 项目 → Settings → Variables and Secrets，并选择 Production 环境。
+Cloudflare 版的渐进式 MP4 CENC AES-CTR 边缘 Range 处理需要专用 Secret，用于加密和解密短时媒体会话令牌。**Pages 项目和独立 Worker 是两套不同的运行环境，Secret 不会自动共享。你访问哪个部署入口，就必须在该入口配置；如果两个入口都在用，就分别配置两次。**可以使用同一个随机值。
 
-- 名称：BXG_MEDIA_SECRET
-- 值：至少 32 个随机字符，不要复用 GitHub 密码、SDK 设备信息或其他项目密钥。
+- 名称：`BXG_MEDIA_SECRET`
+- 值：至少 32 个随机字符。推荐使用密码管理器生成，或在本机运行 `openssl rand -hex 32`。不要复用 GitHub 密码，也不要把该值提交到仓库。
 
-也可使用 Wrangler：
+### Cloudflare Pages
+
+Dashboard：Workers & Pages → 选择你的 **Pages 项目** → Settings → Variables and Secrets → Add。变量名填 `BXG_MEDIA_SECRET`，值填生成的随机字符串，选择 **Encrypt**，并在正在访问的环境（Production 或 Preview）中配置，最后 Save 并重新部署。
+
+也可以用 Wrangler（把占位的项目名替换为自己的 Pages 项目名）：
+
+```sh
+npx wrangler pages secret put BXG_MEDIA_SECRET --project-name <你的Pages项目名>
+```
+
+### 独立 Cloudflare Worker
+
+Dashboard：Workers & Pages → 选择你的 **Worker** → Settings → Variables and Secrets → Add → 类型选 **Secret**，填入同名变量和值，然后点击 Deploy。若使用 Preview／其他环境，也要为正在访问的环境单独配置。
+
+或使用项目中的 Workers 配置：
 
 ```sh
 npx wrangler secret put BXG_MEDIA_SECRET --config wrangler.worker.jsonc
 ```
 
-不要将其写入普通 vars 或源代码。缺少该 Secret 时，未受保护的直接视频仍可播放，受保护分集返回 MEDIA_SECRET_REQUIRED。当前实现针对渐进式 MP4 CENC AES-CTR；HLS/DASH 和其他 DRM 封装仍不支持。配置后须重新部署对应 Pages／Worker 版本。
+Wrangler 命令会交互式要求输入 Secret；Worker 的 `secret put` 会发布一个新版本。不要把密钥写入普通 `vars`、Wrangler 配置或源代码。
+
+如果 Pages 和 Worker **都**显示缺失提示，请分别检查两个部署的设置，而不是只在其中一个地方添加。缺少 Secret 时，未受保护的直接视频仍可播放，受保护分集返回 `MEDIA_SECRET_REQUIRED`。当前支持渐进式 MP4 CENC AES-CTR；HLS/DASH 和其他 DRM 封装仍不支持。

@@ -3,7 +3,7 @@ import { createClient, SearchFilter } from "openhongguo";
 import { ensureCencRuntime } from "../../cenc-runtime.js";
 import { openMediaSession, parseByteRange, parseContentRange, safeMediaSource, sealMediaSession } from "../../media-session.js";
 
-const VERSION = "0.1.8";
+const VERSION = "0.1.9";
 const MAX_CLIENTS = 128;
 const MAX_PROFILES = 256;
 const clients = new Map();
@@ -442,10 +442,19 @@ function decryptedMediaStream(reader,token,start,expectedLength,cenc,firstChunk)
     cancel(reason){return reader.cancel(reason);}
   });
 }
-async function proxyProtectedMedia(token,request,env,debugSession,trace){
+function mediaSecretSetupMessage(runtimeName) {
+  const isPages = runtimeName === "Cloudflare Pages Functions";
+  const target = isPages ? "当前 Cloudflare Pages 项目" : "当前 Cloudflare Worker";
+  const environment = isPages
+    ? "请确认选择了正在访问的 Production 或 Preview 环境。"
+    : "请确认配置的是正在访问的 Worker 环境。";
+  return `请在${target}的 Settings → Variables and Secrets 中添加加密 Secret BXG_MEDIA_SECRET（至少 32 个字符）。${environment} Pages 和独立 Worker 的 Secrets 不会自动共享。`;
+}
+
+async function proxyProtectedMedia(token,request,env,debugSession,trace,runtimeName){
   if(request.method!=="GET"&&request.method!=="HEAD")return errorResponse(405,"MEDIA_METHOD_NOT_ALLOWED","媒体接口只支持 GET 和 HEAD。",{"Allow":"GET, HEAD"});
   const secret=env?.BXG_MEDIA_SECRET;
-  if(typeof secret!=="string"||secret.length<32)return errorResponse(503,"MEDIA_SECRET_REQUIRED","受保护视频需要先配置 BXG_MEDIA_SECRET（至少 32 个字符）。");
+  if(typeof secret!=="string"||secret.length<32)return errorResponse(503,"MEDIA_SECRET_REQUIRED",mediaSecretSetupMessage(runtimeName));
   let media;
   try{media=await openMediaSession(token,secret);if(media.exp<=Date.now())return errorResponse(410,"MEDIA_SESSION_EXPIRED","播放会话已过期，请重新打开本集。");media.sources=media.sources.map(safeMediaSource);}
   catch(error){debugRecord(debugSession,"warn","media.session.rejected",{message:sanitizeDebugMessage(error?.message||error)},trace);return errorResponse(404,"MEDIA_SESSION_INVALID","播放会话无效或无法解密，请重新取得播放地址。");}
@@ -681,7 +690,7 @@ export async function onRequest(context) {
         const key = result?.contentKey?.key;
         if (typeof key !== "string" || !/^[a-fA-F0-9]{32}$/.test(key)) return sendError(502,"CENC_KEY_UNAVAILABLE","SDK 未能为此受保护分集派生有效的 CENC 内容密钥。");
         const secret = context.env?.BXG_MEDIA_SECRET;
-        if (typeof secret !== "string" || secret.length < 32) return sendError(503,"MEDIA_SECRET_REQUIRED","请先在 Cloudflare Worker Secrets 中配置 BXG_MEDIA_SECRET（至少 32 个字符）。");
+        if (typeof secret !== "string" || secret.length < 32) return sendError(503,"MEDIA_SECRET_REQUIRED",mediaSecretSetupMessage(runtimeName));
         let safeSources;
         try { safeSources=[...new Set(sources.map((source)=>safeMediaSource(source)))].slice(0,2); }
         catch (_) { return sendError(502,"MEDIA_SOURCE_REJECTED","上游返回的视频地址不符合安全要求。"); }
@@ -700,7 +709,7 @@ export async function onRequest(context) {
       return sendJson(data);
     }
     if (parts[0] === "media" && parts[1]) {
-      return sendResponse(await proxyProtectedMedia(parts[1], request, context.env, session, requestTrace));
+      return sendResponse(await proxyProtectedMedia(parts[1], request, context.env, session, requestTrace, runtimeName));
     }
     if (parts[0] === "images") {
       const imageUrl = url.searchParams.get("url") || "";

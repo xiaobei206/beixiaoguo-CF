@@ -1,5 +1,13 @@
 # 贝小果 Cloudflare 开发日志
 
+## 0.1.9 — 2026-11-27
+
+### 修正媒体 Secret 缺失提示与部署文档
+- 用户反馈 Pages 与 Workers 都显示“请先在 Cloudflare Worker Secrets 中配置 BXG_MEDIA_SECRET”。检查确认该提示是代码中的固定文字，且 Pages 与 Worker 本来就是独立部署环境，运行时分别读取各自的 `context.env.BXG_MEDIA_SECRET`。
+- 新增运行时识别：Pages Functions 返回 Pages 项目配置指引；独立 Worker 返回 Worker 配置指引，并提醒 Production／Preview 环境选择及 Secret 不自动共享。
+- 部署教程新增两种 Wrangler 命令和各自的 Dashboard 操作路径。
+- 这项修复只改善诊断并说明配置步骤；不会替用户在 Cloudflare 账户中创建 Secret，也不代表生产 Secret 已设置。
+
 ## 0.1.8 — 2026-11-27
 
 ### 修复 CENC 前后端状态提示
