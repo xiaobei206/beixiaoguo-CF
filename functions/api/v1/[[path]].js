@@ -464,7 +464,8 @@ async function proxyProtectedMedia(token,request,env,debugSession,trace,runtimeN
   let range;try{range=parseByteRange(request.headers.get("Range"),total);}
   catch(_){return errorResponse(416,"MEDIA_RANGE_INVALID","请求的视频 Range 无效。",{"Accept-Ranges":"bytes","Content-Range":"bytes */"+total});}
   const length=range.end-range.start+1;
-  const headers=new Headers({"Content-Type":"video/mp4","Accept-Ranges":"bytes","Content-Length":String(length),"Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff"});
+  const browserCacheSeconds=Math.max(0,Math.min(600,Math.floor((media.exp-Date.now())/1000)));
+  const headers=new Headers({"Content-Type":"video/mp4","Accept-Ranges":"bytes","Content-Length":String(length),"Cache-Control":"private, max-age="+browserCacheSeconds,"X-Content-Type-Options":"nosniff"});
   if(range.partial)headers.set("Content-Range","bytes "+range.start+"-"+range.end+"/"+total);
   const status=range.partial?206:200;if(request.method==="HEAD")return new Response(null,{status,headers});
   let cenc;
@@ -676,6 +677,86 @@ export async function onRequest(context) {
       }
       if (parts[2] === "seasons") return sendJson(await callClient(session, "seasons", requestTrace, seriesId));
       if (parts.length === 2) return sendJson(await callClient(session, "getSeries", requestTrace, seriesId));
+    }
+    if (parts[0] === "prefetch" && request.method === "POST") {
+      let payload;
+      try { payload = await request.json(); }
+      catch (_) { return sendError(400, "PREFETCH_BODY_INVALID", "预读请求正文不是有效 JSON。"); }
+      const rawIds = Array.isArray(payload?.episodeIds) ? payload.episodeIds : [];
+      const episodeIds = [...new Set(rawIds.map((value) => String(value || "").trim())
+        .filter((value) => value && value.length <= 128))];
+      if (!episodeIds.length) return sendJson({ items: [], requested: 0, ready: 0 });
+      if (episodeIds.length > 16) return sendError(400, "PREFETCH_LIMIT", "单次最多预读 16 集。");
+      const quality = String(payload?.quality || "best").slice(0, 32);
+      const secret = context.env?.BXG_MEDIA_SECRET;
+      const items = [];
+      for (const episodeId of episodeIds) {
+        try {
+          const result = await callClient(session, "resolvePlayback", requestTrace, episodeId);
+          const data = selectStream(result, quality);
+          if (!data) {
+            items.push({ episodeId, errorCode: "PLAYBACK_EMPTY", error: "上游没有返回可用的视频流。" });
+            continue;
+          }
+          const sources = data._mediaSources || [];
+          const encryption = data._encryption || "";
+          delete data._mediaSources;
+          delete data._encryption;
+          if (data.protected) {
+            if (encryption && encryption.toLowerCase() !== "cenc-aes-ctr") {
+              items.push({ episodeId, errorCode: "CENC_SCHEME_UNSUPPORTED", error: "此分集不是受支持的 CENC AES-CTR 渐进式 MP4。" });
+              continue;
+            }
+            const key = result?.contentKey?.key;
+            if (typeof key !== "string" || !/^[a-fA-F0-9]{32}$/.test(key)) {
+              items.push({ episodeId, errorCode: "CENC_KEY_UNAVAILABLE", error: "SDK 未能为此受保护分集派生有效的 CENC 内容密钥。" });
+              continue;
+            }
+            if (typeof secret !== "string" || secret.length < 32) {
+              items.push({ episodeId, errorCode: "MEDIA_SECRET_REQUIRED", error: mediaSecretSetupMessage(runtimeName) });
+              continue;
+            }
+            let safeSources;
+            try { safeSources = [...new Set(sources.map((source) => safeMediaSource(source)))].slice(0, 2); }
+            catch (_) {
+              items.push({ episodeId, errorCode: "MEDIA_SOURCE_REJECTED", error: "上游返回的视频地址不符合安全要求。" });
+              continue;
+            }
+            if (!safeSources.length) {
+              items.push({ episodeId, errorCode: "PLAYBACK_EMPTY", error: "上游没有返回可用的受保护视频地址。" });
+              continue;
+            }
+            const now = Date.now();
+            const upstreamExpiry = Number(data.expires_at) > 0 ? Number(data.expires_at) * 1000 : now + MEDIA_SESSION_LIFETIME_MS;
+            const expiresAt = Math.min(now + MEDIA_SESSION_LIFETIME_MS, upstreamExpiry);
+            if (expiresAt <= now + 10000) {
+              items.push({ episodeId, errorCode: "PLAYBACK_EXPIRED", error: "播放地址即将过期，请重新打开本集。" });
+              continue;
+            }
+            const mediaToken = await sealMediaSession({
+              v: 1, sources: safeSources, key, exp: expiresAt, episodeId, debugSession: session
+            }, secret);
+            data.src = "/api/v1/media/" + mediaToken;
+            data.expires_at = Math.floor(expiresAt / 1000);
+          }
+          if (!data.src) {
+            items.push({ episodeId, errorCode: "PLAYBACK_EMPTY", error: "没有可用的播放地址。" });
+            continue;
+          }
+          items.push({ episodeId, info: data });
+        } catch (error) {
+          items.push({
+            episodeId,
+            errorCode: "PREFETCH_RESOLVE_FAILED",
+            error: sanitizeDebugMessage(error?.message || error)
+          });
+        }
+      }
+      const ready = items.filter((item) => !!item.info).length;
+      debugRecord(session, "info", "playback.prefetch.completed", {
+        requested: episodeIds.length, ready, failed: items.length - ready
+      }, requestTrace);
+      return sendJson({ items, requested: episodeIds.length, ready });
     }
     if (parts[0] === "play" && parts[1]) {
       const result = await callClient(session, "resolvePlayback", requestTrace, parts[1]);
