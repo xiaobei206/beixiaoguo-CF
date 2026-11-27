@@ -503,13 +503,16 @@
     let imageHost = "";
     try { imageHost = new URL(image.currentSrc || image.src).hostname; } catch (_) {}
     const originalHost = (() => {
-      try { return new URL(image.dataset.originalSrc || image.currentSrc || image.src, window.location.origin).hostname; }
-      catch (_) { return ""; }
+      try {
+        const displayed = new URL(image.dataset.originalSrc || image.currentSrc || image.src, window.location.origin);
+        const source = displayed.searchParams.get("url");
+        return source ? new URL(source).hostname : displayed.hostname;
+      } catch (_) { return ""; }
     })();
     debugWrite("warn", "image.load.error", {
       proxyHost:imageHost, sourceHost:originalHost, retryCount:Number(image.dataset.retryCount) || 0
     });
-    if (!imageProbeStarted && /^\\/api\\/v1\\/images\\?/i.test(image.currentSrc || image.src)) {
+    if (!imageProbeStarted && /\\/api\\/v1\\/images\\?/i.test(image.currentSrc || image.src)) {
       imageProbeStarted = true;
       const probeUrl = image.currentSrc || image.src;
       fetch(probeUrl, {method:"HEAD",headers:{"X-BXG-Session":playbackClientId}})
