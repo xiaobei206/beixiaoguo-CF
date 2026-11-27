@@ -1596,7 +1596,7 @@
         '<div id="playback-status" class="playback-status" role="status">选择集数开始播放</div></section>' +
         '<h3 class="episode-heading">选集</h3><div class="episode-grid">' +
         episodes.map((ep) => '<button class="episode-chip" type="button" data-episode-id="' + escapeHTML(ep.id) + '" data-episode-number="' + escapeHTML(ep.number || "") + '"' + (ep.playable === false ? ' disabled title="当前分集不可播放"' : '') + '>' + escapeHTML("第 " + (ep.number || "") + " 集") + '</button>').join("") +
-        '</div><div class="player-note">支持 0.5–3 倍速、按住临时 2×、上下滑切集和自动连播。可直接播放的非受保护流由浏览器尝试播放；受保护的 CENC 流暂不可播放。电视接力需要家庭局域网内的 N1 或本地助手。</div>';
+        '</div><div class="player-note">支持 0.5–3 倍速、按住临时 2×、上下滑切集和自动连播。可直接播放的非受保护流由浏览器尝试播放；渐进式 MP4 CENC 受保护流由 Cloudflare 边缘函数按需 Range 解密。若播放失败，可打开 DEBUG 面板复制诊断包。电视接力需要家庭局域网内的 N1 或本地助手。</div>';
 
       const detailCoverImage = body.querySelector(".detail-hero img");
       if (detailCoverImage) {
@@ -1818,7 +1818,7 @@
       const info = await request("/api/v1/play/" + encodeURIComponent(episode.id) + "?quality=" + encodeURIComponent(chosen));
       if (requestID !== playback.requestId) return;
       if (info.protected && !info.src) {
-        status.textContent = "该分集使用 CENC 受保护流。Cloudflare 版的按需 Range 解密尚未迁移到边缘函数；此集暂不可播放，原版 N1 仍可正常处理。";
+        status.textContent = "当前后端返回了受保护标记，但没有返回边缘媒体地址。请将 Cloudflare 部署更新到仓库 main 的最新版本；若后端提示 MEDIA_SECRET_REQUIRED，再配置 BXG_MEDIA_SECRET（至少 32 个字符）。";
         return;
       }
       playback.quality = info.quality || chosen;

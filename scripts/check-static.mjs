@@ -10,6 +10,8 @@ for (const file of required) await access(file);
 
 const html = await readFile("public/index.html", "utf8");
 const js = await readFile("public/assets/app.js", "utf8");
+if (js.includes("按需 Range 解密尚未迁移到边缘函数") || js.includes("受保护的 CENC 流暂不可播放")) throw new Error("播放器仍包含过时的 CENC 未迁移／不可播放提示。");
+if (!js.includes("当前后端返回了受保护标记，但没有返回边缘媒体地址")) throw new Error("播放器必须为缺少边缘媒体地址的旧后端提供明确部署诊断。");
 const manifest = JSON.parse(await readFile("public/manifest.webmanifest", "utf8"));
 const routes = JSON.parse(await readFile("public/_routes.json", "utf8"));
 if (routes.version !== 1 || !routes.include?.includes("/api/*")) throw new Error("Pages Functions must only handle /api/* requests");

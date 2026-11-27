@@ -118,7 +118,7 @@ Worker 会使用配置名 `beixiaoguo-cf-worker`，静态资源走 Workers Stati
 ## 运行限制
 
 - 运行时烟雾测试验证 API 路由和 SDK/WASM 初始化，不代表真实片库 API、CENC 受保护视频和电视接力已经验收。
-- CENC 受保护流的媒体解密／Range 代理尚未迁移。
+- 渐进式 MP4 CENC AES-CTR 的边缘媒体解密／Range 代理已在 0.1.7 迁移；CI 本地验证通过不代表真实上游分集已端到端验收。生产部署还须配置 BXG_MEDIA_SECRET 并发布包含该功能的后端版本。
 - Cloudflare 公共边缘运行时不能直接发现你家里的电视或执行家庭 LAN mDNS；此功能仍需要 N1 或局域网助手。
 - 媒体播放取决于浏览器、媒体 CDN、编码和来源授权情况。
 
@@ -134,7 +134,7 @@ Worker 会使用配置名 `beixiaoguo-cf-worker`，静态资源走 Workers Stati
 
 ## 启用受保护 CENC 视频
 
-Cloudflare 版的渐进式 MP4 CENC AES-CTR 边缘 Range 处理需要一个专用 Secret，用于加密和解密跨 isolate 的短时播放会话令牌。在 Cloudflare Dashboard 的 beixiaoguo-cf-worker Worker → Settings → Variables and Secrets 新增 Secret：
+Cloudflare 版的渐进式 MP4 CENC AES-CTR 边缘 Range 处理需要一个专用 Secret，用于加密和解密跨 isolate 的短时播放会话令牌。在 Cloudflare Dashboard 的 Workers & Pages 中，为实际部署入口添加 Secret：若使用 Workers，打开对应 Worker → Settings → Variables and Secrets；若使用 Pages，打开 Pages 项目 → Settings → Variables and Secrets，并选择 Production 环境。
 
 - 名称：BXG_MEDIA_SECRET
 - 值：至少 32 个随机字符，不要复用 GitHub 密码、SDK 设备信息或其他项目密钥。
@@ -145,4 +145,4 @@ Cloudflare 版的渐进式 MP4 CENC AES-CTR 边缘 Range 处理需要一个专�
 npx wrangler secret put BXG_MEDIA_SECRET --config wrangler.worker.jsonc
 ```
 
-不要将其写入普通 vars 或源代码。缺少该 Secret 时，未受保护的直接视频仍可播放，受保护分集返回 MEDIA_SECRET_REQUIRED。当前实现针对渐进式 MP4 CENC AES-CTR；HLS/DASH 和其他 DRM 封装仍不支持。
+不要将其写入普通 vars 或源代码。缺少该 Secret 时，未受保护的直接视频仍可播放，受保护分集返回 MEDIA_SECRET_REQUIRED。当前实现针对渐进式 MP4 CENC AES-CTR；HLS/DASH 和其他 DRM 封装仍不支持。配置后须重新部署对应 Pages／Worker 版本。
