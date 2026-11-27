@@ -357,7 +357,43 @@ async function proxyCoverImage(rawUrl, method, session, trace) {
 }
 
 const MAX_MEDIA_RANGE_BYTES = 32 << 20;
+const MAX_EDGE_PREFETCH_MEDIA_BYTES = 32 << 20;
 const MEDIA_SESSION_LIFETIME_MS = 45 * 60 * 1000;
+function edgeMediaCache(){try{return globalThis.caches?.default||null;}catch(_){return null;}}
+async function matchEdgeMediaCache(request){
+  const cache=edgeMediaCache();if(!cache)return null;
+  const headers=new Headers();const range=request.headers.get("Range");if(range)headers.set("Range",range);
+  return cache.match(new Request(request.url,{method:"GET",headers}));
+}
+async function prewarmProtectedMedia(token,mediaUrl,env,debugSession,trace,runtimeName){
+  const cache=edgeMediaCache();if(!cache){debugRecord(debugSession,"warn","media.edge-cache.unavailable",{episodeId:""},trace);return "unavailable";}
+  const key=new Request(mediaUrl,{method:"GET"});
+  try{if(await cache.match(key)){debugRecord(debugSession,"debug","media.edge-cache.already-warm",{},trace);return "hit";}}
+  catch(error){debugRecord(debugSession,"warn","media.edge-cache.lookup-failed",{message:sanitizeDebugMessage(error?.message||error)},trace);return "unavailable";}
+  const head=await proxyProtectedMedia(token,new Request(mediaUrl,{method:"HEAD"}),env,debugSession,trace,runtimeName);
+  if(!head.ok)return "head-failed";
+  const size=Number(head.headers.get("Content-Length"))||0;
+  if(!size||size>MAX_EDGE_PREFETCH_MEDIA_BYTES){debugRecord(debugSession,"info","media.edge-cache.skipped-size",{bytes:size,limitBytes:MAX_EDGE_PREFETCH_MEDIA_BYTES},trace);return "too-large";}
+  const response=await proxyProtectedMedia(token,new Request(mediaUrl,{method:"GET"}),env,debugSession,trace,runtimeName);
+  if(response.status!==200||!response.body){try{await response.body?.cancel();}catch(_){}debugRecord(debugSession,"warn","media.edge-cache.fill-rejected",{status:response.status},trace);return "fill-failed";}
+  try{
+    await cache.put(key,response);
+    const verified=await cache.match(key);
+    if(!verified){debugRecord(debugSession,"warn","media.edge-cache.fill-not-stored",{bytes:size},trace);return "not-stored";}
+    debugRecord(debugSession,"info","media.edge-cache.ready",{bytes:size,ttlSeconds:Number((verified.headers.get("Cache-Control")||"").match(/max-age=(\\d+)/)?.[1])||0},trace);
+    return "stored";
+  }catch(error){try{await response.body?.cancel();}catch(_){}debugRecord(debugSession,"warn","media.edge-cache.fill-failed",{bytes:size,message:sanitizeDebugMessage(error?.message||error)},trace);return "fill-failed";}
+}
+async function prewarmProtectedMediaBatch(items,request,env,debugSession,trace,runtimeName,concurrency=2){
+  let cursor=0;let stored=0;let skipped=0;let failed=0;
+  const worker=async()=>{while(cursor<items.length){const item=items[cursor++];const token=String(item.info.src).split("/api/v1/media/")[1]||"";if(!token){skipped++;continue;}
+    const mediaUrl=new URL(item.info.src,request.url).href;
+    const result=await prewarmProtectedMedia(token,mediaUrl,env,debugSession,trace,runtimeName);
+    if(result==="stored"||result==="hit")stored++;else if(result==="too-large"||result==="unavailable")skipped++;else failed++;
+  }};
+  await Promise.all(Array.from({length:Math.min(concurrency,items.length)},worker));
+  return {stored,skipped,failed};
+}
 function rememberMapValue(map,key,value,limit){map.delete(key);map.set(key,value);while(map.size>limit)map.delete(map.keys().next().value);}
 function rememberCencContext(token,session,total){
   const now=Date.now();for(const [key,value] of cencFetchContexts)if(value.exp<=now)cencFetchContexts.delete(key);
@@ -453,6 +489,7 @@ function mediaSecretSetupMessage(runtimeName) {
 
 async function proxyProtectedMedia(token,request,env,debugSession,trace,runtimeName){
   if(request.method!=="GET"&&request.method!=="HEAD")return errorResponse(405,"MEDIA_METHOD_NOT_ALLOWED","媒体接口只支持 GET 和 HEAD。",{"Allow":"GET, HEAD"});
+  try{const cached=await matchEdgeMediaCache(request);if(cached){debugRecord(debugSession,"info","media.edge-cache.hit",{range:request.headers.get("Range")||"full"},trace);return request.method==="HEAD"?new Response(null,{status:cached.status,headers:cached.headers}):cached;}}catch(error){debugRecord(debugSession,"warn","media.edge-cache.lookup-failed",{message:sanitizeDebugMessage(error?.message||error)},trace);}
   const secret=env?.BXG_MEDIA_SECRET;
   if(typeof secret!=="string"||secret.length<32)return errorResponse(503,"MEDIA_SECRET_REQUIRED",mediaSecretSetupMessage(runtimeName));
   let media;
@@ -464,8 +501,8 @@ async function proxyProtectedMedia(token,request,env,debugSession,trace,runtimeN
   let range;try{range=parseByteRange(request.headers.get("Range"),total);}
   catch(_){return errorResponse(416,"MEDIA_RANGE_INVALID","请求的视频 Range 无效。",{"Accept-Ranges":"bytes","Content-Range":"bytes */"+total});}
   const length=range.end-range.start+1;
-  const browserCacheSeconds=Math.max(0,Math.min(600,Math.floor((media.exp-Date.now())/1000)));
-  const headers=new Headers({"Content-Type":"video/mp4","Accept-Ranges":"bytes","Content-Length":String(length),"Cache-Control":"private, max-age="+browserCacheSeconds,"X-Content-Type-Options":"nosniff"});
+  const browserCacheSeconds=Math.max(0,Math.min(2700,Math.floor((media.exp-Date.now())/1000)));
+  const headers=new Headers({"Content-Type":"video/mp4","Accept-Ranges":"bytes","Content-Length":String(length),"Cache-Control":"public, max-age="+browserCacheSeconds,"X-Content-Type-Options":"nosniff"});
   if(range.partial)headers.set("Content-Range","bytes "+range.start+"-"+range.end+"/"+total);
   const status=range.partial?206:200;if(request.method==="HEAD")return new Response(null,{status,headers});
   let cenc;
@@ -753,10 +790,28 @@ export async function onRequest(context) {
         }
       }
       const ready = items.filter((item) => !!item.info).length;
+      const warmable = items.filter((item) => item.info?.protected && typeof item.info.src === "string" && item.info.src.startsWith("/api/v1/media/"));
+      let cacheWarm = { stored:0, skipped:0, failed:0, scheduled:0 };
+      if (warmable.length) {
+        const immediate = warmable.slice(0, 3);
+        const immediateResult = await prewarmProtectedMediaBatch(immediate, request, context.env, session, requestTrace, runtimeName, 2);
+        cacheWarm.stored += immediateResult.stored; cacheWarm.skipped += immediateResult.skipped; cacheWarm.failed += immediateResult.failed;
+        const remaining = warmable.slice(3);
+        if (remaining.length && typeof context.waitUntil === "function") {
+          const background = prewarmProtectedMediaBatch(remaining, request, context.env, session, requestTrace, runtimeName, 2)
+            .then((result) => debugRecord(session, "info", "playback.edge-cache.background-completed", result, requestTrace))
+            .catch((error) => debugRecord(session, "warn", "playback.edge-cache.background-failed", {message:sanitizeDebugMessage(error?.message||error)}, requestTrace));
+          context.waitUntil(background);
+          cacheWarm.scheduled = remaining.length;
+        } else if (remaining.length) {
+          const restResult = await prewarmProtectedMediaBatch(remaining, request, context.env, session, requestTrace, runtimeName, 1);
+          cacheWarm.stored += restResult.stored; cacheWarm.skipped += restResult.skipped; cacheWarm.failed += restResult.failed;
+        }
+      }
       debugRecord(session, "info", "playback.prefetch.completed", {
-        requested: episodeIds.length, ready, failed: items.length - ready
+        requested: episodeIds.length, ready, edgeCache:cacheWarm
       }, requestTrace);
-      return sendJson({ items, requested: episodeIds.length, ready });
+      return sendJson({ items, requested: episodeIds.length, ready, edgeCache:cacheWarm });
     }
     if (parts[0] === "play" && parts[1]) {
       const result = await callClient(session, "resolvePlayback", requestTrace, parts[1]);
