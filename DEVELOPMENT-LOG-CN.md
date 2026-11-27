@@ -4,9 +4,9 @@
 
 ### 浏览器自选 Cloudflare 入口 IP
 - 新增播放线路管理器，允许用户在当前浏览器自行添加、命名和删除 IPv4／IPv6 地址；只填写 IP，端口固定为 443，最多保存 24 条。
-- 自选列表与当前选择保存在 localStorage，不上传到服务器；选择时只通过一次 `/api/v1/route?alt_ip=...` 同源请求携带当前 IP，由 Cloudflare 响应头规则读取 URL 查询参数，不设置线路 Cookie。
+- 自选列表与当前选择保存在 localStorage，不上传到服务器；选择时只通过一次 `/api/v1/route?alt_ip=...` 同源请求提交 IP；Worker 先校验 IPv4／IPv6，再通过内部响应头 `X-BXG-Alt-IP` 交给 Cloudflare 规则，不设置线路 Cookie。
 - 新增 `/api/v1/route` 线路诊断接口，记录 Worker／Pages 运行时及浏览器请求中的 `Alt-Used`；前端检查响应的 `Alt-Svc` 是否确实包含所选 IP。
-- Cloudflare 会过滤 Worker 源站直接返回的 `Alt-Svc`。真正切换需要自有橙云域名，并在 Cloudflare Zone 配置 Response Header Transform Rules；默认 `workers.dev`／`pages.dev` 域名无法配置该 Zone 规则，界面会明确提示当前仅保存、未切换。规则使用 `http.request.uri.args` 查询参数字段，不依赖 Pro 版才提供的 `http.request.cookies`。
+- Cloudflare 会过滤 Worker 源站直接返回的 `Alt-Svc`。真正切换需要自有橙云域名，并在 Cloudflare Zone 配置 Response Header Transform Rules；默认 `workers.dev`／`pages.dev` 域名无法配置该 Zone 规则，界面会明确提示当前仅保存、未切换。规则读取 Worker 已校验的 `http.response.headers["x-bxg-alt-ip"][0]`，再删除内部响应头；不依赖 Pro 版 Cookie 字段。
 - Alt-Svc 是备用连接提示，只对后续新建连接生效，不强制迁移已建立的连接；备用 IP 还必须支持原域名 TLS/SNI 证书校验和 HTTP/2。VLESS 可用不等于浏览器 HTTP/2 已验证。
 - 增加 `media.secret.missing` 安全诊断事件，只记录 Secret 是否绑定、长度是否达标及当前运行时，不记录 Secret 内容；缺失提示提醒用户核对当前实际访问的部署环境，不再笼统要求重复配置。
 
