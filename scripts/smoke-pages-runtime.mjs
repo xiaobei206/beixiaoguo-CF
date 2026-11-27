@@ -65,6 +65,12 @@ try {
       JSON.stringify(sdkHealth.body) + "\nWrangler output:\n" + output.slice(-12000));
   }
   assert.equal(sdkHealth.body.sdk, "ready", "openhongguo WASM SDK did not initialize in the Pages runtime");
+  assert.equal(sdkHealth.body.sdkBuild.repository, "xiaobei206/openhongguo");
+  assert.match(sdkHealth.body.sdkBuild.commit, /^[a-f0-9]{40}$/);
+  assert.equal(sdkHealth.body.sdkBuild.playbackFallback, "video_tab");
+  assert.equal(sdkHealth.body.sdkBuild.deviceActivation, true);
+  assert.equal(sdkHealth.body.sdkBuild.deviceHeartbeat, true);
+  assert.equal(sdkHealth.body.sdkBuild.serverIssuedEGDI, true);
   console.log("Pages Functions runtime smoke test passed.");
   console.log("WASM SDK initialized successfully without issuing upstream requests.");
 } finally {

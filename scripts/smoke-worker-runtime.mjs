@@ -77,6 +77,12 @@ try {
   const sdkBody = await sdkResponse.json();
   assert.equal(sdkResponse.status, 200);
   assert.equal(sdkBody.sdk, "ready", "openhongguo WASM SDK did not initialize in Workers runtime");
+  assert.equal(sdkBody.sdkBuild.repository, "xiaobei206/openhongguo");
+  assert.match(sdkBody.sdkBuild.commit, /^[a-f0-9]{40}$/);
+  assert.equal(sdkBody.sdkBuild.playbackFallback, "video_tab");
+  assert.equal(sdkBody.sdkBuild.deviceActivation, true);
+  assert.equal(sdkBody.sdkBuild.deviceHeartbeat, true);
+  assert.equal(sdkBody.sdkBuild.serverIssuedEGDI, true);
 
   const probeResponse = await fetchResponse(
     "/api/v1/health?sdk=probe",
