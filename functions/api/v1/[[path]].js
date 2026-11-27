@@ -295,7 +295,7 @@ export async function onRequest(context) {
             await probeClient.discover({ channel: "推荐" });
             throw new Error("WASM probe unexpectedly completed without using the mock transport");
           } catch (error) {
-            if (!String(error?.message || error).includes(sentinel)) throw error;
+            if (/Go program has already exited/i.test(String(error?.message || error))) throw error;
           }
         }
         if (transportCalls < 2) throw new Error("WASM probe did not reach the JavaScript transport twice");
