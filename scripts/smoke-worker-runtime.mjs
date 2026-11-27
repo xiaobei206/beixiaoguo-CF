@@ -7,6 +7,7 @@ const base = `http://127.0.0.1:${port}`;
 const child = spawn("npx", [
   "--yes", "wrangler@latest", "dev",
   "--config", "wrangler.worker.jsonc",
+  "--var", "BXG_SMOKE_TEST:1",
   "--ip", "127.0.0.1", "--port", String(port)
 ], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true, detached: process.platform !== "win32" });
 
