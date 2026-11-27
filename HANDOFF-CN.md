@@ -27,8 +27,8 @@
 
 ### 2. 仓库与代码状态
 
-- 维护仓库：`xiaobei206/beixiaoguo-CF`，当前 main 为 `6f9bfeed24aad316a4d78363d30b779685da3d46`。
-- 部署 fork：`qmancf206/beixiaoguo-CF`，main 仍为 `fcea543d5762176ff52cfc4927b61c9289561643`。维护仓库相对 fork 快进领先 4 个提交；本轮**没有**修改或推送部署 fork。VPS 的本地工作副本可以从维护仓库快进更新，不需要向 fork 推送。
+- 维护仓库：`xiaobei206/beixiaoguo-CF`，当前 main 为 `5825664f59bd81e937e65953f277b765fc4c000c`。
+- 部署 fork：`qmancf206/beixiaoguo-CF`，main 仍为 `fcea543d5762176ff52cfc4927b61c9289561643`。维护仓库相对 fork 快进领先 5 个提交；本轮**没有**修改或推送部署 fork。VPS 的本地工作副本可以从维护仓库快进更新，不需要向 fork 推送。
 - Wrangler Worker 配置：`wrangler.worker.jsonc`；Worker 名称 `beixiaoguo-cf-worker`，入口 `worker.js`。
 - `worker.js` 会把 Worker 的 `env` 原样传给 `functions/api/v1/[[path]].js`。播放逻辑读取 `context.env?.BXG_MEDIA_SECRET`；名称与调用代码一致。现有配置文件未声明同名普通变量。
 - 0.1.14 补上了直接播放分支的诊断事件 `media.secret.missing`，仅记录 bool 状态，不记录密钥值。部署提交链接：
