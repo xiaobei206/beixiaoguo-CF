@@ -1,0 +1,14 @@
+{
+  "name": "beixiaoguo-cf",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "贝小果 Cloudflare Pages / Functions 轻量版",
+  "scripts": {
+    "build": "node scripts/check-static.mjs",
+    "test": "node scripts/check-static.mjs && node scripts/smoke-sdk.mjs"
+  },
+  "dependencies": {
+    "openhongguo": "0.4.0"
+  }
+}

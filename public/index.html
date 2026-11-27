@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#111116">
+  <meta name="description" content="贝小果 Lite：部署于 Cloudflare 的匿名短剧浏览客户端">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="贝小果">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/assets/icon-192.png">
+  <title>贝小果 Lite · 短剧时间</title>
+  <link rel="stylesheet" href="/assets/app.css?v=0.1.0">
+  <script defer src="/assets/app.js?v=0.1.0"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="贝小果首页">
+        <span class="brand-mark"><i></i><i></i><i></i></span>
+        <span class="brand-name">贝小果</span>
+      </a>
+      <form id="search-form" class="search-box" role="search">
+        <span class="search-icon" aria-hidden="true">⌕</span>
+        <input id="search-input" type="search" autocomplete="off" placeholder="搜一部想看的短剧…" aria-label="搜索短剧">
+        <button type="submit" aria-label="搜索">搜索</button>
+      </form>
+      <div class="topbar-actions">
+        <span class="lan-pill"><span></span> 家庭局域网</span>
+        <button id="install-app-button" class="install-button" type="button" aria-label="添加贝小果到桌面">⇧ 添加到桌面</button>
+        <button id="settings-button" class="settings-button" type="button" aria-label="缓存与预热设置">⚙ 设置</button>
+      </div>
+    </header>
+
+    <nav class="main-nav" aria-label="主导航">
+      <button class="nav-item active" data-view="discover">发现</button>
+      <button class="nav-item" data-view="rank">排行榜</button>
+      <button class="nav-item" data-view="new">新剧上线</button>
+      <button class="nav-item" data-view="hot">热搜</button>
+      <button class="nav-item" data-view="mine">我的收藏</button>
+    </nav>
+
+    <main>
+      <section id="welcome" class="welcome">
+        <div class="welcome-copy">
+          <div class="eyebrow"><span class="eyebrow-dot"></span> YOUR HOME SHORT-DRAMA LIBRARY</div>
+          <h1>好故事，<em>接着看。</em></h1>
+          <p>在家打开贝小果，手机、平板和电脑都能自在浏览。</p>
+        </div>
+        <div class="welcome-art" aria-hidden="true">
+          <div class="art-orbit orbit-one"></div>
+          <div class="art-orbit orbit-two"></div>
+          <div class="art-berry">贝</div>
+          <div class="art-spark spark-one">✦</div>
+          <div class="art-spark spark-two">✧</div>
+        </div>
+      </section>
+
+      <section class="section-heading">
+        <div>
+          <div class="section-kicker" id="section-kicker">为你精选</div>
+          <h2 id="section-title">发现好剧</h2>
+          <p id="section-subtitle">从这里开始，找到下一部喜欢的故事。</p>
+        </div>
+        <button id="refresh-button" class="subtle-button" type="button">↻ <span>刷新</span></button>
+      </section>
+
+      <div id="filter-tags" class="filter-tags" aria-label="频道和筛选标签" hidden></div>
+      <div id="status" class="status" role="status" aria-live="polite">正在连接片库…</div>
+      <section id="hero" class="feature-card" hidden></section>
+      <section id="series-grid" class="series-grid" aria-label="短剧列表"></section>
+      <div class="load-more-wrap">
+        <span id="pagination-tag" class="pagination-tag" hidden></span>
+        <button id="load-more" class="load-more" type="button" hidden>加载更多</button>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <span>贝小果 <b>0.1.28</b></span>
+      <span>只在你的家庭网络中提供服务 · 浏览数据保存在当前浏览器</span>
+    </footer>
+  </div>
+
+  <dialog id="detail-dialog" class="detail-dialog">
+    <button id="dialog-close" class="dialog-close" type="button" aria-label="关闭">×</button>
+    <div id="detail-content" class="detail-content"></div>
+  </dialog>
+
+  <dialog id="install-dialog" class="detail-dialog install-dialog">
+    <button id="install-dialog-close" class="dialog-close" type="button" aria-label="关闭">×</button>
+    <div id="install-dialog-content" class="detail-content install-dialog-content"></div>
+  </dialog>
+
+  <dialog id="cast-dialog" class="detail-dialog cast-dialog">
+    <button id="cast-dialog-close" class="dialog-close" type="button" aria-label="关闭">×</button>
+    <div class="detail-content">
+      <h2>投屏到 hongguoTV</h2>
+      <p class="detail-meta">选择同一局域网内正在运行的电视</p>
+      <div id="cast-dialog-content" class="cast-dialog-content"></div>
+    </div>
+  </dialog>
+
+  <dialog id="settings-dialog" class="detail-dialog settings-dialog">
+    <button id="settings-close" class="dialog-close" type="button" aria-label="关闭">×</button>
+    <div class="detail-content">
+      <h2>Cloudflare 轻量版</h2>
+      <p class="detail-meta">运行时调整，保存后立即生效，无需重启。仅供家庭局域网使用。</p>
+      <div id="settings-live" class="settings-live">Cloudflare 轻量版按需运行，不启动常驻服务器或定时预热。</div>
+      <form id="settings-form" class="settings-form">
+        <section class="settings-section">
+          <h3>自动预热</h3>
+          <label class="settings-check"><input id="preheat-enabled" type="checkbox"> 启用智能预热</label>
+          <label class="settings-check"><input id="preheat-startup" type="checkbox"> 服务启动后立即预热</label>
+          <label class="settings-check"><input id="preheat-hourly" type="checkbox"> 每小时整点更新</label>
+          <div class="settings-fields">
+            <label>每个目录预热数量<input id="preheat-items" type="number" min="20" max="300" step="10"></label>
+            <label>播放结束后空闲判定（秒）<input id="idle-seconds" type="number" min="60" max="600" step="30"></label>
+          </div>
+          <p class="settings-hint">默认 1 个目录 API 后台工作线程、2 个图片工作线程；单次 API 10 秒、图片 15 秒超时。播放或前台请求繁忙时自动让路。</p>
+        </section>
+        <section class="settings-section">
+          <h3>图片缓存</h3>
+          <div class="settings-fields">
+            <label>图片 RAM 上限（MiB）<input id="image-ram-mib" type="number" min="64" max="512" step="16"></label>
+            <label>图片闪存上限（GiB）<input id="image-disk-gib" type="number" min="1" max="8" step="1"></label>
+            <label>RAM 闲置淘汰（小时）<input id="image-ram-idle-hours" type="number" min="1" max="720" step="24"></label>
+            <label>闪存保留期限（天）<input id="image-disk-retention-days" type="number" min="7" max="365" step="7"></label>
+          </div>
+          <p class="settings-hint">RAM 淘汰不删除闪存副本；闪存按 LRU 淘汰，并至少保留 1GiB 系统剩余空间。</p>
+        </section>
+        <section class="settings-section">
+          <h3>文字与 API 缓存</h3>
+          <div class="settings-fields">
+            <label>API RAM 上限（MiB）<input id="api-ram-mib" type="number" min="16" max="256" step="16"></label>
+            <label>API 条目上限<input id="api-max-entries" type="number" min="256" max="8192" step="256"></label>
+          </div>
+          <p class="settings-hint">目录/详情/分集文字数据保存在 RAM；服务重启后由自动预热重新获取，不建立永久历史资料库。</p>
+        </section>
+        <div class="settings-actions">
+          <button type="submit" class="settings-primary">保存设置</button>
+          <button id="preheat-now" type="button" class="settings-secondary">立即预热</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <button id="pip-hold-speed" class="pip-hold-speed hold-speed-button" type="button" aria-label="按住临时 2 倍速，松开恢复已设置倍速" hidden>按住 2×</button>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

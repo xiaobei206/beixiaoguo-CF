@@ -1,42 +1,42 @@
 # 贝小果 Cloudflare
 
-贝小果的 Cloudflare 轻量化版本，目标是将静态网页部署在 Cloudflare Pages，并把可行的匿名片库能力迁到 Pages Functions / Workers，尽量复用原版前端。
+贝小果的 Cloudflare 轻量化版本。静态网页部署在 Cloudflare Pages，匿名片库请求由 Pages Functions 按需处理，不需要自管 VPS 或数据库。
 
 当前开发版本：0.1.0
 
 ## 开发原则
 
-- 与原版 `beixiaoguo-web` 分开开发，不修改 N1 正式版。
-- 保持匿名，不引入账号系统或用户资料收集。
-- 优先复用原生 HTML、CSS、JavaScript；不为了部署引入前端框架。
+- 与原版 beixiaoguo-web 分开开发，不修改 N1 正式版。
+- 保持匿名，不增加账号系统或用户资料收集。
+- 复用原生 HTML、CSS、JavaScript，不引入大型前端框架。
 - Pages 静态资源与 Functions 分离；不依赖自管 VPS。
-- 不将尚未验证的能力标成已实现；播放、CENC 解密和电视接力按实际兼容性逐步迁移。
+- 不把尚未验证的功能标成已实现；CENC 解密和电视接力按实际兼容性迁移。
 
-## Cloudflare Pages
+## Cloudflare Pages 设置
 
 - Framework preset：None
-- Build command：`npm run build`
-- Build output directory：`public`
+- Build command：npm run build
+- Build output directory：public
 - Root directory：仓库根目录
-- Production branch：`main`
+- Production branch：main
 
-连接 GitHub 仓库后，Pages 会自动构建和部署。仓库的 `functions/` 目录会作为 Pages Functions 路由一起部署。
+连接 GitHub 仓库 xiaobei206/beixiaoguo-CF 后，Pages 会自动构建和部署。根目录 functions/ 会作为 Pages Functions 路由一起部署。
 
 ## 功能状态
 
-- [x] 迁移现有贝小果响应式 UI、PWA 清单和应用图标。
+- [x] 迁移现有响应式 UI、PWA 清单和应用图标。
 - [x] 自动部署前静态资源检查。
-- [ ] Cloudflare Functions 匿名 SDK 运行验证。
-- [ ] 推荐、搜索、热搜、新剧、榜单、详情与分季 API。
+- [x] 建立 Pages Functions 匿名 SDK 适配层，待 CI 验证 Workers 运行时兼容性。
+- [x] 建立推荐、搜索、热搜、新剧、榜单、详情、分集和多季 API 入口，待真实上游验收。
 - [ ] 受保护 CENC 视频流的边缘解密与 Range 支持。
-- [ ] 电视接力（需要能够访问用户本地网络的配套组件，普通边缘函数无法直接进行局域网 mDNS 搜索）。
+- [ ] 电视接力；公共边缘函数无法直接对家庭局域网做 mDNS 发现。
 
-## 版本与文档
+## 文档
 
-- [VERSION](VERSION)
-- [开发日志](DEVELOPMENT-LOG-CN.md)
-- [架构与迁移计划](docs/architecture.md)
-- [交接索引](HANDOFF-CN.md)
+- VERSION：当前版本
+- DEVELOPMENT-LOG-CN.md：累计开发日志
+- docs/architecture.md：架构与迁移计划
+- HANDOFF-CN.md：交接索引
 
 ## 声明
 
