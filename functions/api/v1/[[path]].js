@@ -5,6 +5,8 @@ const VERSION = "0.1.6";
 const MAX_CLIENTS = 128;
 const MAX_PROFILES = 256;
 const clients = new Map();
+const clientDebugContexts = new Map();
+const sessionQueues = new Map();
 const profiles = new Map();
 const debugLogs = new Map();
 const MAX_DEBUG_SESSIONS = 128;
@@ -95,12 +97,12 @@ function getSession(request) {
   if (/^[a-zA-Z0-9._:-]{8,128}$/.test(value)) return value;
   return "bxg-edge-" + crypto.randomUUID();
 }
-function fetchTransport(session, trace = null) {
+function fetchTransport(session, debugContext) {
   return async function sendTransport(req) {
     const startedAt = Date.now();
     let target = "upstream";
     try { const u = new URL(req.url); target = u.hostname + u.pathname; } catch (_) {}
-    debugRecord(session, "debug", "upstream.request", { method: req.method || "GET", target }, trace);
+    debugRecord(session, "debug", "upstream.request", { method: req.method || "GET", target }, debugContext?.trace);
     try {
   const headers = new Headers(req.headers || {});
   headers.delete("host");
@@ -133,7 +135,7 @@ function fetchTransport(session, trace = null) {
   }
   debugRecord(session, response.ok ? "info" : "warn", "upstream.response", {
     target, status: response.status, durationMs: Date.now() - startedAt, bytes: bytes.byteLength
-  }, trace);
+  }, debugContext?.trace);
   return { status: response.status, headers: responseHeaders, cookies, body: bytes };
     } catch (error) {
       debugRecord(session, "error", "upstream.error", {
@@ -167,60 +169,80 @@ async function getClient(session, trace = null) {
   if (globalThis.__BXG_OPENHONGGUO_GO?.exited) {
     debugRecord(session, "warn", "wasm.runtime.exited", runtimeDiagnostics(), trace);
     clients.clear();
+    clientDebugContexts.clear();
   }
   const cached = clients.get(session);
   if (cached) {
+    const context = clientDebugContexts.get(session);
+    if (context) context.trace = trace;
     clients.delete(session);
     clients.set(session, cached);
     return cached;
   }
   debugRecord(session, "info", "sdk.client.create", runtimeDiagnostics(), trace);
+  const debugContext = { trace };
   const client = await createClient({
     profile: profileStore(session),
-    transport: fetchTransport(session, trace),
-    log: (line) => debugRecord(session, "debug", "sdk.log", { message: sanitizeDebugMessage(line) }, trace),
+    transport: fetchTransport(session, debugContext),
+    log: (line) => debugRecord(session, "debug", "sdk.log", { message: sanitizeDebugMessage(line) }, debugContext.trace),
     timeoutMs: 25000,
     retryAttempts: 2,
     deviceResets: 1,
   });
   debugRecord(session, "info", "sdk.client.ready", runtimeDiagnostics(), trace);
   clients.set(session, client);
-  trimMap(clients, MAX_CLIENTS);
+  clientDebugContexts.set(session, debugContext);
+  trimMap(clients, MAX_CLIENTS, (key) => clientDebugContexts.delete(key));
   return client;
 }
 async function callClient(session, method, trace, ...args) {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const client = await getClient(session, trace);
-    try {
-      return await client[method](...args);
-    } catch (error) {
-      const message = String(error?.message || error);
-      if (attempt === 0 && /Go program has already exited/i.test(message)) {
-        debugRecord(session, "error", "wasm.call.after-exit", {
-          method, message, runtime: runtimeDiagnostics()
-        }, trace);
-        // The SDK's module-scoped runtime promise may still point at a Go
-        // instance whose callback trampoline is already dead. Mark it exited
-        // so the next createClient() forces loadRuntime() to instantiate a
-        // fresh Go/WASM runtime instead of wrapping the stale global API.
-        const go = globalThis.__BXG_OPENHONGGUO_GO;
-        if (go) go.exited = true;
-        const previous = globalThis.__BXG_OPENHONGGUO_STATE || {};
-        globalThis.__BXG_OPENHONGGUO_STATE = {
-          ...previous,
-          generation: Number(previous.generation || globalThis.__BXG_OPENHONGGUO_GENERATION) || 0,
-          exited: true,
-          exitedAt: Date.now(),
-          error: sanitizeDebugMessage(message),
-        };
-        delete globalThis.__openhongguo;
-        clients.clear();
-        continue;
+  // A cached SDK client carries one request-scoped trace context. Serialize
+  // calls for the same browser session so concurrent UI requests cannot
+  // overwrite each other's edge diagnostics.
+  const previous = sessionQueues.get(session) || Promise.resolve();
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const queued = previous.catch(() => {}).then(() => gate);
+  sessionQueues.set(session, queued);
+  await previous.catch(() => {});
+  try {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const client = await getClient(session, trace);
+      try {
+        return await client[method](...args);
+      } catch (error) {
+        const message = String(error?.message || error);
+        if (attempt === 0 && /Go program has already exited/i.test(message)) {
+          debugRecord(session, "error", "wasm.call.after-exit", {
+            method, message, runtime: runtimeDiagnostics()
+          }, trace);
+          // Mark the module-level runtime so the next createClient() discards
+          // its stale JS API and instantiates a fresh Go/WASM runtime.
+          const go = globalThis.__BXG_OPENHONGGUO_GO;
+          if (go) go.exited = true;
+          const previousState = globalThis.__BXG_OPENHONGGUO_STATE || {};
+          globalThis.__BXG_OPENHONGGUO_STATE = {
+            ...previousState,
+            generation: Number(previousState.generation || globalThis.__BXG_OPENHONGGUO_GENERATION) || 0,
+            exited: true,
+            exitedAt: Date.now(),
+            error: sanitizeDebugMessage(message),
+          };
+          delete globalThis.__openhongguo;
+          clients.clear();
+          clientDebugContexts.clear();
+          continue;
+        }
+        throw error;
       }
-      throw error;
     }
+    throw new Error("Go/WASM runtime 重启后仍无法完成调用");
+  } finally {
+    const context = clientDebugContexts.get(session);
+    if (context) context.trace = null;
+    release();
+    if (sessionQueues.get(session) === queued) sessionQueues.delete(session);
   }
-  throw new Error("Go/WASM runtime 重启后仍无法完成调用");
 }
 async function proxyCoverImage(rawUrl, method, session, trace) {
   const parseTarget = (value) => {
