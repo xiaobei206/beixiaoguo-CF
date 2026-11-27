@@ -237,6 +237,7 @@ export async function onRequest(context) {
   const parts = path.split("/").filter(Boolean).map((part) => {
     try { return decodeURIComponent(part); } catch (_) { return part; }
   });
+  let requestSession = "";
   try {
     if (request.method === "OPTIONS") return new Response(null, { status: 204 });
     if (request.method !== "GET" && request.method !== "HEAD" && request.method !== "POST" && request.method !== "PUT" && request.method !== "DELETE") {
@@ -303,6 +304,7 @@ export async function onRequest(context) {
       return errorResponse(501, "LOCAL_NETWORK_REQUIRED", "电视接力需要家庭局域网内的 N1 或配套助手。");
     }
     const session = getSession(request);
+    requestSession = session;
     debugRecord(session, "info", "api.request", {
       method: request.method, endpoint: describeEndpoint(parts)
     });
@@ -363,8 +365,8 @@ export async function onRequest(context) {
     const code = error && typeof error.code === "string" ? error.code : "UPSTREAM_ERROR";
     const raw = error && error.message ? String(error.message) : "未知错误";
     const message = raw.length > 240 ? raw.slice(0, 240) + "…" : raw;
-    if (typeof session !== "undefined") {
-      debugRecord(session, "error", "api.error", {
+    if (requestSession) {
+      debugRecord(requestSession, "error", "api.error", {
         endpoint: describeEndpoint(parts), code, message: sanitizeDebugMessage(raw),
         runtime: runtimeDiagnostics()
       });
