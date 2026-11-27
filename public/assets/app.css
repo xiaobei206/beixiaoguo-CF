@@ -415,3 +415,51 @@ body { padding-top:env(safe-area-inset-top); }
   .deployment-guide h3 { font-size:13px; }
   .deployment-guide .guide-note { overflow-wrap:anywhere; }
 }
+
+
+/* In-app DEBUG viewer */
+.debug-button {
+  display:inline-flex; align-items:center; gap:7px; padding:8px 11px;
+  border:1px solid rgba(231,194,138,.32); border-radius:10px;
+  color:#f0d7ad; background:rgba(231,194,138,.075); cursor:pointer;
+  white-space:nowrap; font-size:12px; font-weight:700; letter-spacing:.02em;
+}
+.debug-button:hover { border-color:rgba(231,194,138,.65); background:rgba(231,194,138,.14); }
+.debug-button span {
+  min-width:18px; padding:2px 5px; border-radius:999px;
+  color:#18151a; background:#e7c28a; text-align:center; font-size:10px; line-height:1.2;
+}
+.debug-dialog { width:min(1000px,calc(100% - 28px)); max-height:90vh; }
+.debug-dialog .detail-content { padding:24px; }
+.debug-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; margin:4px 0 15px; }
+.debug-heading h2 { margin:5px 0 6px; font-size:22px; }
+.debug-heading p { margin:0; }
+.debug-runtime-badge {
+  flex:none; padding:7px 10px; border:1px solid rgba(131,213,174,.3);
+  border-radius:999px; color:#9ddfbe; background:rgba(131,213,174,.08); font-size:11px;
+}
+.debug-runtime-badge.error { color:#ff9ead; border-color:rgba(241,106,138,.4); background:rgba(241,106,138,.1); }
+.debug-summary {
+  padding:10px 12px; border:1px solid var(--line); border-radius:10px;
+  color:#c9c1cc; background:rgba(255,255,255,.035); font-size:11px; line-height:1.8;
+}
+.debug-actions { display:flex; flex-wrap:wrap; gap:8px; margin:13px 0 8px; }
+.debug-actions button { padding:8px 11px; font-size:11px; }
+.debug-privacy { margin:0 0 10px; color:#89818d; font-size:10px; line-height:1.6; }
+.debug-output {
+  min-height:240px; max-height:52vh; overflow:auto; margin:0; padding:13px;
+  border:1px solid rgba(255,255,255,.09); border-radius:10px;
+  color:#c9d9cd; background:#0d1110; font:11px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace;
+  white-space:pre-wrap; overflow-wrap:anywhere; tab-size:2;
+}
+@media (max-width:760px) {
+  .debug-button { padding:7px 8px; font-size:10px; }
+  .debug-button span { min-width:16px; }
+  .debug-dialog .detail-content { padding:20px 15px; }
+  .debug-heading { flex-direction:column; gap:10px; }
+  .debug-heading h2 { font-size:19px; }
+  .debug-summary { font-size:10px; }
+  .debug-actions { gap:6px; }
+  .debug-actions button { padding:7px 9px; font-size:10px; }
+  .debug-output { min-height:220px; max-height:55vh; padding:10px; font-size:10px; }
+}
