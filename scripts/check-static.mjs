@@ -27,6 +27,8 @@ const packageInfo = JSON.parse(await readFile("package.json", "utf8"));
 if (worker.includes("Cloudflare Worker Secrets 中配置 BXG_MEDIA_SECRET")) throw new Error("Secret error still uses the generic Worker-only wording.");
 if (!worker.includes("mediaSecretSetupMessage(runtimeName)") || !worker.includes("Pages 和独立 Worker 的 Secrets 不会自动共享")) throw new Error("Secret error must explain runtime-specific setup and independent environments.");
 if (!worker.includes("debugSession:session") || !worker.includes("media.cenc.stream.failed") || !worker.includes("media.cenc.stream.truncated")) throw new Error("Native video requests must retain correlated media-stream diagnostics.");
+if (!worker.includes("async function prewarmProtectedMedia(") || !worker.includes("await cache.put(key,response)") || !worker.includes("media.edge-cache.hit") || !worker.includes("media.edge-cache.ready")) throw new Error("Cloudflare must prewarm and serve decrypted media from its edge cache.");
+if (!worker.includes("MAX_EDGE_PREFETCH_MEDIA_BYTES = 32 << 20") || !worker.includes('"Cache-Control":"public, max-age="+browserCacheSeconds')) throw new Error("Edge media cache must enforce a size cap and token-lifetime TTL.");
 const workerRuntime = await readFile("functions/openhongguo-runtime.js", "utf8");
 const cencRuntime = await readFile("functions/cenc-runtime.js", "utf8");
 const cencSource = await readFile("edge-cenc/cenc/layout.go", "utf8");
@@ -49,6 +51,7 @@ if (!worker.includes(`const VERSION = "${version}";`)) throw new Error("Function
 if (wrangler.rules !== undefined) throw new Error("Pages Wrangler config must not contain the Workers-only rules field; Pages imports WASM modules directly");
 if (!wrangler.pages_build_output_dir || wrangler.main !== undefined) throw new Error("wrangler.jsonc must remain a Pages-only configuration");
 if (workerWrangler.name !== "beixiaoguo-cf-worker" || workerWrangler.main !== "./worker.js") throw new Error("Worker target must use the dedicated worker entry point and name");
+if (workerWrangler.cache?.enabled !== true) throw new Error("Workers Cache must be enabled for full MP4 Range caching.");
 if (workerWrangler.assets?.directory !== "./public" || workerWrangler.assets?.binding !== "ASSETS" || !workerWrangler.assets?.run_worker_first?.includes("/api/*")) throw new Error("Workers target must serve public assets and route /api/* through the Worker");
 if (!workerWrangler.rules?.some(rule => rule.type === "CompiledWasm" && rule.globs?.includes("**/*.wasm"))) throw new Error("Workers Wrangler config must compile the SDK WASM as a precompiled module");
 if (!html.includes("/assets/app.js?v=" + version)) throw new Error("HTML JS version does not match VERSION");
