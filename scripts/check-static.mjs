@@ -15,8 +15,8 @@ if (js.includes("按需 Range 解密尚未迁移到边缘函数") || js.includes
 if (!js.includes("当前后端返回了受保护标记，但没有返回边缘媒体地址")) throw new Error("播放器必须为缺少边缘媒体地址的旧后端提供明确部署诊断。");
 if (!js.includes("player.media.error") || !js.includes("player.media.stalled") || !js.includes("mediaElementDiagnostics(video)")) throw new Error("Browser media-state diagnostics are missing.");
 if (!js.includes("const EDGE_PREFETCH_COUNT = 6;") || !js.includes("const BROWSER_PRELOAD_COUNT = 3;")) throw new Error("Playback prefetch targets must remain six edge resolutions and three browser videos.");
-if (!js.includes('const ROUTE_COOKIE_NAME = "bxg_alt_ip";') || !js.includes("normalizeRouteIPAddress") || !js.includes("Alt-Svc") || !js.includes(".workers.dev") || !js.includes(".pages.dev")) throw new Error("Browser-local CF IP route selection and platform limitations are missing.");
-if (!html.includes('id="route-dialog"') || !html.includes('id="route-button"') || !styles.includes(".route-option")) throw new Error("The browser route picker UI is missing.");
+if (!js.includes("const MAX_ROUTE_ENTRIES = 24;") || !js.includes("normalizeRouteIPAddress") || !js.includes('/api/v1/route?alt_ip=') || !js.includes("Alt-Svc") || !js.includes(".workers.dev") || !js.includes(".pages.dev")) throw new Error("Browser-local CF IP route selection and platform limitations are missing.");
+if (!html.includes('id="route-dialog"') || !html.includes('id="route-button"') || !html.includes('http.request.uri.args["alt_ip"][0]') || !styles.includes(".route-option")) throw new Error("The browser route picker UI is missing.");
 const worker = await readFile("functions/api/v1/[[path]].js", "utf8");
 if (!worker.includes('parts[0] === "prefetch" && request.method === "POST"') || !worker.includes("episodeIds.length > 6") || !worker.includes("最多预解析 6 集")) throw new Error("Edge playback prefetch must be capped at six episodes.");
 if (!styles.includes(".player-preload-container") || !styles.includes(".bxg-preload-video")) throw new Error("Offscreen browser preloading styles are missing.");
