@@ -19,7 +19,7 @@ if (!html.includes("/assets/app.css?v=" + version)) throw new Error("HTML CSS ve
 if (!manifest.name.includes("贝小果")) throw new Error("PWA manifest has an unexpected name");
 if (!js.includes("X-BXG-Session")) throw new Error("API calls must include anonymous session ID");
 
-for (const file of ["public/assets/app.js", "functions/api/v1/[[path]].js", "scripts/smoke-sdk.mjs"]) {
+for (const file of ["public/assets/app.js", "functions/api/v1/[[path]].js", "scripts/smoke-sdk.mjs", "scripts/smoke-pages-runtime.mjs"]) {
   const result = spawnSync(process.execPath, ["--check", file], { encoding: "utf8" });
   if (result.status !== 0) throw new Error("Syntax check failed: " + file + "\n" + result.stderr);
 }

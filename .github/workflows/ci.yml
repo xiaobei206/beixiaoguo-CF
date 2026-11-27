@@ -25,3 +25,5 @@ jobs:
         run: npm test
       - name: Build Cloudflare Pages Function bundle
         run: npx --yes wrangler@latest pages functions build --outdir .wrangler/functions-build
+      - name: Pages Functions runtime smoke test (including WASM)
+        run: node scripts/smoke-pages-runtime.mjs
