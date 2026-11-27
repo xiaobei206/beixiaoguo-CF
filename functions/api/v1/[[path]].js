@@ -502,7 +502,8 @@ async function proxyProtectedMedia(token,request,env,debugSession,trace,runtimeN
   catch(_){return errorResponse(416,"MEDIA_RANGE_INVALID","请求的视频 Range 无效。",{"Accept-Ranges":"bytes","Content-Range":"bytes */"+total});}
   const length=range.end-range.start+1;
   const browserCacheSeconds=Math.max(0,Math.min(2700,Math.floor((media.exp-Date.now())/1000)));
-  const headers=new Headers({"Content-Type":"video/mp4","Accept-Ranges":"bytes","Content-Length":String(length),"Cache-Control":"public, max-age="+browserCacheSeconds,"X-Content-Type-Options":"nosniff"});
+  const mediaCacheControl=total<=MAX_EDGE_PREFETCH_MEDIA_BYTES?"public, max-age="+browserCacheSeconds:"private, no-store";
+  const headers=new Headers({"Content-Type":"video/mp4","Accept-Ranges":"bytes","Content-Length":String(length),"Cache-Control":mediaCacheControl,"X-Content-Type-Options":"nosniff"});
   if(range.partial)headers.set("Content-Range","bytes "+range.start+"-"+range.end+"/"+total);
   const status=range.partial?206:200;if(request.method==="HEAD")return new Response(null,{status,headers});
   let cenc;
