@@ -482,16 +482,22 @@ function mediaSecretSetupMessage(runtimeName) {
   const isPages = runtimeName === "Cloudflare Pages Functions";
   const target = isPages ? "当前 Cloudflare Pages 项目" : "当前 Cloudflare Worker";
   const environment = isPages
-    ? "请确认选择了正在访问的 Production 或 Preview 环境。"
-    : "请确认配置的是正在访问的 Worker 环境。";
-  return `请在${target}的 Settings → Variables and Secrets 中添加加密 Secret BXG_MEDIA_SECRET（至少 32 个字符）。${environment} Pages 和独立 Worker 的 Secrets 不会自动共享。`;
+    ? "请核对当前请求实际进入的 Production 或 Preview 环境。"
+    : "请核对当前请求实际进入的 Worker 及其 Production 环境。";
+  return `当前媒体请求由${target}处理，但该运行时没有读取到有效的加密 Secret BXG_MEDIA_SECRET（至少 32 个字符）。${environment} Pages 和独立 Worker 的 Secrets 不会自动共享；如果你已经配置过，请先核对访问域名和实际部署环境，不要盲目重复创建。`;
 }
 
 async function proxyProtectedMedia(token,request,env,debugSession,trace,runtimeName){
   if(request.method!=="GET"&&request.method!=="HEAD")return errorResponse(405,"MEDIA_METHOD_NOT_ALLOWED","媒体接口只支持 GET 和 HEAD。",{"Allow":"GET, HEAD"});
   try{const cached=await matchEdgeMediaCache(request);if(cached){debugRecord(debugSession,"info","media.edge-cache.hit",{range:request.headers.get("Range")||"full"},trace);return request.method==="HEAD"?new Response(null,{status:cached.status,headers:cached.headers}):new Response(cached.body,cached);}}catch(error){debugRecord(debugSession,"warn","media.edge-cache.lookup-failed",{message:sanitizeDebugMessage(error?.message||error)},trace);}
   const secret=env?.BXG_MEDIA_SECRET;
-  if(typeof secret!=="string"||secret.length<32)return errorResponse(503,"MEDIA_SECRET_REQUIRED",mediaSecretSetupMessage(runtimeName));
+  if(typeof secret!=="string"||secret.length<32) {
+    debugRecord(debugSession,"error","media.secret.missing",{
+      runtime:runtimeName,secretBound:typeof secret==="string",
+      secretLengthValid:typeof secret==="string"&&secret.length>=32
+    },trace);
+    return errorResponse(503,"MEDIA_SECRET_REQUIRED",mediaSecretSetupMessage(runtimeName));
+  }
   let media;
   try{media=await openMediaSession(token,secret);if(typeof media.debugSession==="string"&&/^[a-zA-Z0-9._:-]{8,128}$/.test(media.debugSession))debugSession=media.debugSession;if(media.exp<=Date.now())return errorResponse(410,"MEDIA_SESSION_EXPIRED","播放会话已过期，请重新打开本集。");media.sources=media.sources.map(safeMediaSource);}
   catch(error){debugRecord(debugSession,"warn","media.session.rejected",{message:sanitizeDebugMessage(error?.message||error)},trace);return errorResponse(404,"MEDIA_SESSION_INVALID","播放会话无效或无法解密，请重新取得播放地址。");}
@@ -619,6 +625,16 @@ export async function onRequest(context) {
       const requestedLimit = Number(url.searchParams.get("limit")) || 160;
       const limit = Math.max(1, Math.min(240, requestedLimit));
       return sendJson({ events: bucket ? bucket.events.slice(-limit) : [], runtime: runtimeDiagnostics() });
+    }
+    if (parts[0] === "route") {
+      if (request.method !== "GET") return sendError(405, "ROUTE_METHOD_NOT_ALLOWED", "线路诊断接口只支持 GET。");
+      const session = getSession(request);
+      requestSession = session;
+      const altUsed = request.headers.get("Alt-Used") || "";
+      debugRecord(session, altUsed ? "info" : "debug", altUsed ? "network.alt-used" : "network.route.ping", {
+        runtime:runtimeName, host:url.hostname, altUsed
+      }, requestTrace);
+      return sendJson({ ok:true, runtime:runtimeName, host:url.hostname, altUsed });
     }
     if (parts[0] === "health") {
       let sdkState = "not-loaded";
@@ -751,6 +767,10 @@ export async function onRequest(context) {
               continue;
             }
             if (typeof secret !== "string" || secret.length < 32) {
+              debugRecord(session, "error", "media.secret.missing", {
+                runtime:runtimeName, secretBound:typeof secret === "string",
+                secretLengthValid:typeof secret === "string" && secret.length >= 32
+              }, requestTrace);
               items.push({ episodeId, errorCode: "MEDIA_SECRET_REQUIRED", error: mediaSecretSetupMessage(runtimeName) });
               continue;
             }
