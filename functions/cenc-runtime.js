@@ -26,8 +26,11 @@ export async function ensureCencRuntime(fetchRange) {
         resolveReady();
       };
       try {
-        const result = await WebAssembly.instantiate(cencModule, go.importObject);
-        const running = go.run(result.instance);
+        const instantiated = await WebAssembly.instantiate(cencModule, go.importObject);
+        // The overload receiving a Module returns an Instance directly; the byte-buffer overload returns { instance, module }.
+        const instance = instantiated instanceof WebAssembly.Instance ? instantiated : instantiated.instance;
+        if (!(instance instanceof WebAssembly.Instance)) throw new Error("CENC Wasm instantiation did not return an instance");
+        const running = go.run(instance);
         running.catch((error) => {
           const message = String(error?.message || error);
           globalThis.__BXG_CENC_RUNTIME_ERROR = message;
