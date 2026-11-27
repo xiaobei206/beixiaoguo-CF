@@ -2,7 +2,7 @@
 
 贝小果的 Cloudflare 轻量化版本。静态网页部署在 Cloudflare Pages，匿名片库请求由 Pages Functions 按需处理，不需要自管 VPS 或数据库。
 
-当前开发版本：0.1.0
+当前开发版本：0.1.1
 
 ## 开发原则
 
@@ -25,8 +25,8 @@
 ## 功能状态
 
 - [x] 迁移现有响应式 UI、PWA 清单和应用图标。
-- [x] 自动部署前静态资源检查。
-- [x] 建立 Pages Functions 匿名 SDK 适配层，待 CI 验证 Workers 运行时兼容性。
+- [x] 自动部署前静态资源检查；静态请求与 `/api/*` Functions 路由分开。
+- [x] Pages Functions 已能完成编译与打包；正在验证 Workers 运行时的 WASM 初始化。
 - [x] 建立推荐、搜索、热搜、新剧、榜单、详情、分集和多季 API 入口，待真实上游验收。
 - [ ] 受保护 CENC 视频流的边缘解密与 Range 支持。
 - [ ] 电视接力；公共边缘函数无法直接对家庭局域网做 mDNS 发现。

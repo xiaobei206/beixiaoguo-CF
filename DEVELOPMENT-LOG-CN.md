@@ -1,5 +1,15 @@
 # 贝小果 Cloudflare 开发日志
 
+## 0.1.1 — 2026-11-27
+
+### Cloudflare WASM 加载适配
+- 运行时烟雾测试发现：原版 Node SDK 的 `createRequire(.../dist/wasm_exec.js)` 在 Pages Functions 中会报 `Module not found`，单纯打包通过并不能证明边缘运行成功。
+- 增加静态 `wasm_exec.js` / WASM 导入，并在构建时对固定版本 SDK 做小型兼容补丁，避免 Cloudflare isolate 依赖动态模块路径和文件系统读取。
+- `wrangler.jsonc` 只保留 WASM Data 规则，确保 `wasm_exec.js` 按 JavaScript 执行。
+- 版本号统一更新为 0.1.1，并继续由 CI 执行 Pages Functions runtime smoke test。
+
+## 0.1.0 — 2026-11-27
+
 ## 0.1.0 — 2026-11-27
 
 ### 初始项目与 Cloudflare 迁移底座

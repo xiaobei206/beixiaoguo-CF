@@ -9,10 +9,10 @@
 
 ## 当前版本
 
-**0.1.0 — 2026-11-27**
+**0.1.1 — 2026-11-27**
 
 - 已迁移原版 UI/PWA 资源。
-- 已接入 openhongguo Node.js/WASM SDK 到 Pages Functions，待 CI runtime 验证。
+- 已接入 openhongguo Node.js/WASM SDK；0.1.1 修复动态 `require()` 加载 WASM 的边缘兼容问题，等待新增 runtime smoke test 结果。
 - 已建立推荐、搜索、详情、多季、榜单、新剧与播放解析接口适配层，仍需真实上游验收。
 - CENC 受保护流、图片预热/持久缓存、电视接力尚未迁移。
 - 原版 beixiaoguo-web 不受本仓库修改影响。

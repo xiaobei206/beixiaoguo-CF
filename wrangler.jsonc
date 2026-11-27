@@ -12,12 +12,6 @@
       "globs": [
         "**/*.wasm"
       ]
-    },
-    {
-      "type": "Text",
-      "globs": [
-        "**/wasm_exec.js"
-      ]
     }
   ]
 }
