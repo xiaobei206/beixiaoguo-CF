@@ -134,7 +134,7 @@ Worker 会使用配置名 `beixiaoguo-cf-worker`，静态资源走 Workers Stati
 响应头名称：`Alt-Svc`；操作：**Set dynamic**；动态值：
 
 ```text
-concat("h2=\\"", http.request.uri.args["alt_ip"][0], ":443\\\"; ma=300")
+concat("h2=\"", http.request.uri.args["alt_ip"][0], ":443\"; ma=300")
 ```
 
 **规则 2：IPv6 自选地址**
@@ -148,7 +148,7 @@ concat("h2=\\"", http.request.uri.args["alt_ip"][0], ":443\\\"; ma=300")
 响应头名称：`Alt-Svc`；操作：**Set dynamic**；动态值：
 
 ```text
-concat("h2=\\\"[", http.request.uri.args["alt_ip"][0], "]:443\\\"; ma=300")
+concat("h2=\"[", http.request.uri.args["alt_ip"][0], "]:443\"; ma=300")
 ```
 
 **规则 3：恢复默认线路**
