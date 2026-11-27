@@ -17,6 +17,23 @@ const MAX_DEBUG_SESSIONS = 128;
 const MAX_DEBUG_EVENTS = 240;
 const DEBUG_LOG_TTL_MS = 60 * 60 * 1000;
 
+function normalizeRouteIPAddress(raw) {
+  let value = String(raw || "").trim();
+  if (value.startsWith("[") && value.endsWith("]")) value = value.slice(1, -1);
+  if (!value || /[\\s/\\?#@]/.test(value)) return "";
+  if (value.includes(":")) {
+    try {
+      const hostname = new URL("https://[" + value + "]/").hostname;
+      if (!hostname.startsWith("[") || !hostname.endsWith("]")) return "";
+      const normalized = hostname.slice(1, -1).toLowerCase();
+      return normalized.includes("%") ? "" : normalized;
+    } catch (_) { return ""; }
+  }
+  const octets = value.split(".");
+  if (octets.length !== 4 || octets.some((part) => !/^\\d{1,3}$/.test(part) || Number(part) > 255)) return "";
+  return octets.map((part) => String(Number(part))).join(".");
+}
+
 function sanitizeDebugMessage(value) {
   return String(value == null ? "" : value)
     .replace(/https?:\/\/[^\s"'<>]+/gi, (raw) => {
@@ -630,11 +647,16 @@ export async function onRequest(context) {
       if (request.method !== "GET") return sendError(405, "ROUTE_METHOD_NOT_ALLOWED", "线路诊断接口只支持 GET。");
       const session = getSession(request);
       requestSession = session;
+      const requestedRoute = url.searchParams.get("alt_ip") || "auto";
+      const selectedAltIp = requestedRoute === "auto" ? "auto" : normalizeRouteIPAddress(requestedRoute);
+      if (!selectedAltIp) return sendError(400, "ROUTE_IP_INVALID", "线路 IP 无效，只允许 IPv4 或 IPv6，端口固定为 443。");
       const altUsed = request.headers.get("Alt-Used") || "";
       debugRecord(session, altUsed ? "info" : "debug", altUsed ? "network.alt-used" : "network.route.ping", {
-        runtime:runtimeName, host:url.hostname, altUsed
+        runtime:runtimeName, host:url.hostname, selectedAltIp, altUsed
       }, requestTrace);
-      return sendJson({ ok:true, runtime:runtimeName, host:url.hostname, altUsed });
+      return sendJson({
+        ok:true, runtime:runtimeName, host:url.hostname, selectedAltIp, altUsed
+      }, 200, {"X-BXG-Alt-IP":selectedAltIp});
     }
     if (parts[0] === "health") {
       let sdkState = "not-loaded";
