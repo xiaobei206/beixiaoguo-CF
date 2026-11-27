@@ -114,7 +114,7 @@
   function normalizeRouteIPAddress(raw) {
     let value = String(raw || "").trim();
     if (value.startsWith("[") && value.endsWith("]")) value = value.slice(1, -1);
-    if (!value || /[\\s/\\?#@]/.test(value)) return "";
+    if (!value || /[\s/?#@]/.test(value)) return "";
     if (value.includes(":")) {
       try {
         const parsed = new URL("https://[" + value + "]/");
@@ -125,7 +125,7 @@
       } catch (_) { return ""; }
     }
     const parts = value.split(".");
-    if (parts.length !== 4 || parts.some((part) => !/^\\d{1,3}$/.test(part) || Number(part) > 255)) return "";
+    if (parts.length !== 4 || parts.some((part) => !/^\d{1,3}$/.test(part) || Number(part) > 255)) return "";
     return parts.map((part) => String(Number(part))).join(".");
   }
 
