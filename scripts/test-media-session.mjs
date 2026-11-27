@@ -1,0 +1,26 @@
+import assert from "node:assert/strict";
+import { openMediaSession, parseByteRange, parseContentRange, safeMediaSource, sealMediaSession } from "../functions/media-session.js";
+
+const secret = "test-secret-0123456789abcdef0123456789";
+const payload = { v:1, sources:["https://cdn.example.com/v/episode.mp4?signature=not-for-the-browser"], key:"00112233445566778899aabbccddeeff", exp:Date.now()+60000, episodeId:"episode-test" };
+const token = await sealMediaSession(payload,secret);
+assert.ok(token.length>40);
+assert.equal(token.includes(payload.key),false);
+assert.equal(token.includes("cdn.example.com"),false);
+assert.deepEqual(await openMediaSession(token,secret),payload);
+await assert.rejects(()=>openMediaSession(token,"wrong-secret-0123456789abcdef"),/invalid or cannot be decrypted/);
+const index=Math.floor(token.length/2);
+const tampered=token.slice(0,index)+(token[index]==="A"?"B":"A")+token.slice(index+1);
+await assert.rejects(()=>openMediaSession(tampered,secret),/invalid or cannot be decrypted|invalid media session token/);
+assert.deepEqual(parseByteRange("",100),{start:0,end:99,partial:false});
+assert.deepEqual(parseByteRange("bytes=10-19",100),{start:10,end:19,partial:true});
+assert.deepEqual(parseByteRange("bytes=90-",100),{start:90,end:99,partial:true});
+assert.deepEqual(parseByteRange("bytes=-10",100),{start:90,end:99,partial:true});
+assert.deepEqual(parseByteRange("bytes=-200",100),{start:0,end:99,partial:true});
+assert.throws(()=>parseByteRange("bytes=1-2,8-9",100),{code:"RANGE_INVALID"});
+assert.throws(()=>parseByteRange("bytes=100-",100),{code:"RANGE_UNSATISFIABLE"});
+assert.deepEqual(parseContentRange("bytes 10-19/100"),{start:10,end:19,total:100});
+assert.throws(()=>parseContentRange("bytes */100"));
+assert.equal(safeMediaSource("https://cdn.example.com/v.mp4"),"https://cdn.example.com/v.mp4");
+for(const value of ["http://cdn.example.com/v.mp4","https://127.0.0.1/v.mp4","https://localhost/v.mp4","https://user:pass@cdn.example.com/v.mp4","https://cdn.example.com:8443/v.mp4"]) assert.throws(()=>safeMediaSource(value));
+console.log("Media session encryption, URL validation, and Range parsing tests passed.");

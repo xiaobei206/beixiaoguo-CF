@@ -8,6 +8,7 @@ const child = spawn("npx", [
   "--yes", "wrangler@latest", "dev",
   "--config", "wrangler.worker.jsonc",
   "--var", "BXG_SMOKE_TEST:1",
+  "--var", "BXG_MEDIA_SECRET:ci-smoke-secret-0123456789abcdef",
   "--ip", "127.0.0.1", "--port", String(port)
 ], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true, detached: process.platform !== "win32" });
 
@@ -94,6 +95,12 @@ try {
   assert.equal(probeBody.goCallbacks, "ok", "Worker did not complete Go-to-JavaScript callbacks");
   assert.ok(probeBody.transportCalls >= 2, "Worker did not invoke the mock transport twice on one Go runtime");
   assert.equal(probeBody.wasm.exited, false, "Worker Go/WASM runtime exited during the probe");
+
+  const cencResponse = await fetchResponse("/api/v1/health?sdk=cenc-probe", 10000, "Worker CENC WASM initialization timed out.\\n" + output.slice(-12000));
+  const cencBody = await cencResponse.json();
+  assert.equal(cencResponse.status, 200, "CENC WASM did not initialize: " + JSON.stringify(cencBody));
+  assert.equal(cencBody.cencWasm, "ready", "CENC WASM API did not respond");
+
   console.log("Cloudflare Workers runtime smoke test passed.");
   console.log("Static assets, WASM initialization, and repeated Go-to-JavaScript callbacks passed.");
 } finally {

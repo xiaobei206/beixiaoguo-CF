@@ -130,3 +130,19 @@ Worker 会使用配置名 `beixiaoguo-cf-worker`，静态资源走 Workers Stati
 - [Pages Functions 入门](https://developers.cloudflare.com/pages/functions/get-started/)
 - [Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/)
 - [Workers Static Assets](https://developers.cloudflare.com/workers/static-assets/)
+
+
+## 启用受保护 CENC 视频
+
+Cloudflare 版的渐进式 MP4 CENC AES-CTR 边缘 Range 处理需要一个专用 Secret，用于加密和解密跨 isolate 的短时播放会话令牌。在 Cloudflare Dashboard 的 beixiaoguo-cf-worker Worker → Settings → Variables and Secrets 新增 Secret：
+
+- 名称：BXG_MEDIA_SECRET
+- 值：至少 32 个随机字符，不要复用 GitHub 密码、SDK 设备信息或其他项目密钥。
+
+也可使用 Wrangler：
+
+```sh
+npx wrangler secret put BXG_MEDIA_SECRET --config wrangler.worker.jsonc
+```
+
+不要将其写入普通 vars 或源代码。缺少该 Secret 时，未受保护的直接视频仍可播放，受保护分集返回 MEDIA_SECRET_REQUIRED。当前实现针对渐进式 MP4 CENC AES-CTR；HLS/DASH 和其他 DRM 封装仍不支持。

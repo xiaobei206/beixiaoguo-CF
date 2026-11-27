@@ -29,3 +29,12 @@
 - GitHub 仓库：xiaobei206/beixiaoguo-CF
 - Production branch：main
 - Workers Builds 命令见部署教程；不要把 Pages 和 Worker 的 Wrangler 配置混用。
+
+
+## 0.1.7：受保护分集边缘媒体处理
+
+- 复用 N1 的 MP4 CENC 布局解析器，并在 CI 原生测试后构建独立 Go/WASM 模块。
+- 受保护播放地址变为同源加密会话 URL；服务端内容密钥不出现在前端 JSON 或明文 URL 中。
+- 新增 /api/v1/media/:token，支持单个 Range、Content-Range 校验、按需流式解密和短时会话过期。
+- 生产 Worker 需设置 Secret BXG_MEDIA_SECRET（至少 32 个字符）。
+- CI 覆盖解析器测试、媒体令牌保护、Range 处理和 Workers/WASM 初始化；真实上游分集端到端播放仍需验证。

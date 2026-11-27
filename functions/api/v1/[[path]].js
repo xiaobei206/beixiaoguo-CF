@@ -1,7 +1,9 @@
 import "../../openhongguo-runtime.js";
 import { createClient, SearchFilter } from "openhongguo";
+import { ensureCencRuntime } from "../../cenc-runtime.js";
+import { openMediaSession, parseByteRange, parseContentRange, safeMediaSource, sealMediaSession } from "../../media-session.js";
 
-const VERSION = "0.1.6";
+const VERSION = "0.1.7";
 const MAX_CLIENTS = 128;
 const MAX_PROFILES = 256;
 const clients = new Map();
@@ -9,6 +11,8 @@ const clientDebugContexts = new Map();
 const sessionQueues = new Map();
 const profiles = new Map();
 const debugLogs = new Map();
+const cencFetchContexts = new Map();
+const mediaMetadataCache = new Map();
 const MAX_DEBUG_SESSIONS = 128;
 const MAX_DEBUG_EVENTS = 240;
 const DEBUG_LOG_TTL_MS = 60 * 60 * 1000;
@@ -63,6 +67,9 @@ function sdkBuildDiagnostics() {
     deviceActivation: build.deviceActivation === true,
     deviceHeartbeat: build.deviceHeartbeat === true,
     serverIssuedEGDI: build.serverIssuedEGDI === true,
+    cencRangeDecrypt: build.cencRangeDecrypt === true,
+    cencImplementation: build.cencImplementation || null,
+    cencWasmBytes: Number(build.cencWasmBytes) || 0,
   };
 }
 function runtimeDiagnostics() {
@@ -96,8 +103,8 @@ function json(data, status = 200, extraHeaders = {}) {
     },
   });
 }
-function errorResponse(status, code, message) {
-  return json({ error: { code, message } }, status, { "X-BXG-Error-Code": code });
+function errorResponse(status, code, message, extraHeaders = {}) {
+  return json({ error: { code, message } }, status, { "X-BXG-Error-Code": code, ...extraHeaders });
 }
 function trimMap(map, maxSize, onEvict) {
   while (map.size > maxSize) {
@@ -349,6 +356,122 @@ async function proxyCoverImage(rawUrl, method, session, trace) {
   return errorResponse(502, "IMAGE_PROXY_FAILED", "无法取得封面。");
 }
 
+const MAX_MEDIA_RANGE_BYTES = 32 << 20;
+const MEDIA_SESSION_LIFETIME_MS = 45 * 60 * 1000;
+function rememberMapValue(map,key,value,limit){map.delete(key);map.set(key,value);while(map.size>limit)map.delete(map.keys().next().value);}
+function rememberCencContext(token,session,total){
+  const now=Date.now();for(const [key,value] of cencFetchContexts)if(value.exp<=now)cencFetchContexts.delete(key);
+  rememberMapValue(cencFetchContexts,token,{sources:session.sources,total,exp:session.exp},32);
+}
+async function openMediaRangeResponse(session,start,end,expectedTotal=null){
+  if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||end<start)throw new Error("invalid upstream media range");
+  const expectedLength=end-start+1;let lastError=null;
+  for(const raw of session.sources){
+    let target;try{target=new URL(safeMediaSource(raw));}catch(error){lastError=error;continue;}
+    for(let redirects=0;redirects<=3;redirects++){
+      let response;
+      try{response=await fetch(target.href,{method:"GET",headers:{"Range":"bytes="+start+"-"+end,"Accept":"video/mp4,application/octet-stream;q=0.9,*/*;q=0.1"},redirect:"manual",signal:AbortSignal.timeout(25000)});}
+      catch(error){lastError=error;break;}
+      if(response.status>=300&&response.status<400){
+        const location=response.headers.get("location");try{await response.body?.cancel();}catch(_){}
+        if(!location||redirects===3){lastError=new Error("upstream media redirect limit exceeded");break;}
+        try{target=new URL(safeMediaSource(new URL(location,target).href));}catch(error){lastError=error;break;}continue;
+      }
+      if(response.status!==206){try{await response.body?.cancel();}catch(_){}lastError=new Error("upstream did not honor a byte range");break;}
+      let cr;try{cr=parseContentRange(response.headers.get("content-range"));}catch(error){try{await response.body?.cancel();}catch(_){}lastError=error;break;}
+      if(cr.start!==start||cr.end!==end||(expectedTotal!=null&&cr.total!==expectedTotal)){
+        try{await response.body?.cancel();}catch(_){}lastError=new Error("upstream Content-Range mismatch");break;
+      }
+      const rawLength=response.headers.get("content-length");
+      if(rawLength!=null&&rawLength!==""&&Number.isFinite(Number(rawLength))&&Number(rawLength)!==expectedLength){
+        try{await response.body?.cancel();}catch(_){}lastError=new Error("upstream media Content-Length mismatch");break;
+      }
+      return {response,total:cr.total};
+    }
+  }
+  throw lastError||new Error("no usable media source");
+}
+async function readMediaRange(session,start,count,expectedTotal=null){
+  if(!Number.isSafeInteger(count)||count<0||count>MAX_MEDIA_RANGE_BYTES)throw new Error("media layout range exceeds 32 MiB");
+  if(count===0)return {bytes:new Uint8Array(),total:expectedTotal||0};
+  if(expectedTotal!=null&&(start>expectedTotal||count>expectedTotal-start))throw new Error("media layout range is outside the media file");
+  const {response,total}=await openMediaRangeResponse(session,start,start+count-1,expectedTotal);
+  if(!response.body)throw new Error("upstream media response has no body");
+  const reader=response.body.getReader(),chunks=[];let length=0;
+  try{while(true){const {done,value}=await reader.read();if(done)break;if(!value?.byteLength)continue;length+=value.byteLength;if(length>count){await reader.cancel();throw new Error("upstream sent more bytes than requested");}chunks.push(value);}}
+  finally{try{reader.releaseLock();}catch(_){}}
+  if(length!==count)throw new Error("upstream returned a short media range");
+  const bytes=new Uint8Array(length);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}
+  return {bytes,total};
+}
+async function fetchCencRangeById(token,offset,count){
+  const session=cencFetchContexts.get(String(token));if(!session||session.exp<=Date.now())throw new Error("CENC fetch session expired");
+  const start=Number(offset),length=Number(count);
+  if(!Number.isSafeInteger(start)||!Number.isSafeInteger(length)||start<0||length<0||start>session.total||length>session.total-start)throw new Error("CENC requested an out-of-file Range");
+  return (await readMediaRange(session,start,length,session.total)).bytes;
+}
+async function mediaFileSize(token,session){
+  const now=Date.now();for(const [key,value] of mediaMetadataCache)if(value.exp<=now)mediaMetadataCache.delete(key);
+  const cached=mediaMetadataCache.get(token);
+  if(cached&&cached.exp>now){mediaMetadataCache.delete(token);mediaMetadataCache.set(token,cached);return cached.total;}
+  const {bytes,total}=await readMediaRange(session,0,1,null);
+  if(bytes.byteLength!==1||total<=0)throw new Error("unable to determine media file size");
+  rememberMapValue(mediaMetadataCache,token,{total,exp:session.exp},64);return total;
+}
+function decryptedMediaStream(reader,token,start,expectedLength,cenc,firstChunk){
+  let position=start,remaining=expectedLength,initial=firstChunk;
+  return new ReadableStream({
+    async pull(controller){
+      try{
+        let chunk,alreadyDecrypted=false;
+        if(initial!==null){chunk=initial;initial=null;alreadyDecrypted=true;}
+        else{
+          if(remaining===0){controller.close();return;}
+          const result=await reader.read();
+          if(result.done){if(remaining!==0)controller.error(new Error("upstream ended before Range completion"));else controller.close();return;}
+          if(!result.value?.byteLength)return;
+          chunk=result.value instanceof Uint8Array?result.value:new Uint8Array(result.value);
+        }
+        if(chunk.byteLength>remaining){chunk=chunk.subarray(0,remaining);void reader.cancel().catch(()=>{});}
+        if(chunk.byteLength===0){if(remaining===0)controller.close();return;}
+        if(!alreadyDecrypted&&cenc.decrypt(token,position,chunk)!==true)throw new Error("CENC layout unavailable in this edge isolate");
+        position+=chunk.byteLength;remaining-=chunk.byteLength;controller.enqueue(chunk);
+        if(remaining===0){controller.close();void reader.cancel().catch(()=>{});}
+      }catch(error){controller.error(error);}
+    },
+    cancel(reason){return reader.cancel(reason);}
+  });
+}
+async function proxyProtectedMedia(token,request,env,debugSession,trace){
+  if(request.method!=="GET"&&request.method!=="HEAD")return errorResponse(405,"MEDIA_METHOD_NOT_ALLOWED","媒体接口只支持 GET 和 HEAD。",{"Allow":"GET, HEAD"});
+  const secret=env?.BXG_MEDIA_SECRET;
+  if(typeof secret!=="string"||secret.length<32)return errorResponse(503,"MEDIA_SECRET_REQUIRED","受保护视频需要先配置 BXG_MEDIA_SECRET（至少 32 个字符）。");
+  let media;
+  try{media=await openMediaSession(token,secret);if(media.exp<=Date.now())return errorResponse(410,"MEDIA_SESSION_EXPIRED","播放会话已过期，请重新打开本集。");media.sources=media.sources.map(safeMediaSource);}
+  catch(error){debugRecord(debugSession,"warn","media.session.rejected",{message:sanitizeDebugMessage(error?.message||error)},trace);return errorResponse(404,"MEDIA_SESSION_INVALID","播放会话无效或无法解密，请重新取得播放地址。");}
+  let total;
+  try{total=await mediaFileSize(token,media);}
+  catch(error){debugRecord(debugSession,"error","media.size.failed",{episodeId:media.episodeId,message:sanitizeDebugMessage(error?.message||error)},trace);return errorResponse(502,"MEDIA_RANGE_UPSTREAM","上游视频服务器未能提供有效的 Range 数据。");}
+  let range;try{range=parseByteRange(request.headers.get("Range"),total);}
+  catch(_){return errorResponse(416,"MEDIA_RANGE_INVALID","请求的视频 Range 无效。",{"Accept-Ranges":"bytes","Content-Range":"bytes */"+total});}
+  const length=range.end-range.start+1;
+  const headers=new Headers({"Content-Type":"video/mp4","Accept-Ranges":"bytes","Content-Length":String(length),"Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff"});
+  if(range.partial)headers.set("Content-Range","bytes "+range.start+"-"+range.end+"/"+total);
+  const status=range.partial?206:200;if(request.method==="HEAD")return new Response(null,{status,headers});
+  let cenc;
+  try{rememberCencContext(token,media,total);cenc=await ensureCencRuntime(fetchCencRangeById);const opened=await cenc.open(token,total,media.key,media.exp);const info=typeof opened==="string"?JSON.parse(opened):opened;if(!info?.protected)throw new Error("MP4 contains no protected CENC samples");}
+  catch(error){debugRecord(debugSession,"error","media.cenc.layout.failed",{episodeId:media.episodeId,message:sanitizeDebugMessage(error?.message||error)},trace);return errorResponse(502,"CENC_LAYOUT_UNAVAILABLE","无法解析此分集的 CENC MP4 布局。");}
+  let upstream;
+  try{upstream=(await openMediaRangeResponse(media,range.start,range.end,total)).response;}
+  catch(error){debugRecord(debugSession,"error","media.range.failed",{episodeId:media.episodeId,start:range.start,end:range.end,message:sanitizeDebugMessage(error?.message||error)},trace);return errorResponse(502,"MEDIA_RANGE_UPSTREAM","上游视频服务器未能提供请求的 Range。");}
+  if(!upstream.body)return errorResponse(502,"MEDIA_RANGE_EMPTY","上游媒体响应没有数据体。");
+  const reader=upstream.body.getReader();let firstChunk;
+  try{const first=await reader.read();if(first.done||!first.value?.byteLength)throw new Error("upstream media range body is empty");firstChunk=first.value instanceof Uint8Array?first.value:new Uint8Array(first.value);if(firstChunk.byteLength>length)firstChunk=firstChunk.subarray(0,length);if(cenc.decrypt(token,range.start,firstChunk)!==true)throw new Error("CENC decrypt initialization failed");}
+  catch(error){try{await reader.cancel();}catch(_){}debugRecord(debugSession,"error","media.cenc.first_chunk.failed",{episodeId:media.episodeId,message:sanitizeDebugMessage(error?.message||error)},trace);return errorResponse(502,"CENC_DECRYPT_FAILED","无法解密视频的首个媒体区块。");}
+  debugRecord(debugSession,"debug","media.cenc.range",{episodeId:media.episodeId,start:range.start,end:range.end,totalBytes:total},trace);
+  return new Response(decryptedMediaStream(reader,token,range.start,length,cenc,firstChunk),{status,headers});
+}
+
 function mapSearchType(value) {
   switch (value) {
     case "short": return [SearchFilter.ShortPlay];
@@ -375,14 +498,18 @@ function selectStream(result, requestedQuality) {
   }
   if (!selected) return null;
   const protectedStream = !!(playback.protected || selected.stream.protected);
+  const mediaSources = [selected.stream.url, selected.stream.backup_url]
+    .filter((value, index, items) => typeof value === "string" && value.trim() && items.indexOf(value) === index);
   return {
     quality: selected.label,
     available_qualities: list.map((entry) => ({ label: entry.label, codec: entry.codec })),
-    src: protectedStream ? "" : (selected.stream.url || selected.stream.backup_url || ""),
+    src: protectedStream ? "" : (mediaSources[0] || ""),
     protected: protectedStream,
     duration_seconds: playback.duration_seconds || 0,
     expires_at: playback.expires_at || 0,
     media_type: playback.media_type || "",
+    _mediaSources: mediaSources,
+    _encryption: selected.stream.encryption || "",
   };
 }
 export async function onRequest(context) {
@@ -450,6 +577,11 @@ export async function onRequest(context) {
       if (url.searchParams.get("sdk") === "1") {
         await getClient(getSession(request), requestTrace);
         sdkState = "ready";
+      }
+      if (url.searchParams.get("sdk") === "cenc-probe" && context.env?.BXG_SMOKE_TEST === "1") {
+        const cenc = await ensureCencRuntime(fetchCencRangeById);
+        if (cenc.ping() !== true) throw new Error("CENC WASM probe did not respond");
+        return sendJson({ status: "ok", version: VERSION, runtime: runtimeName, cencWasm: "ready", sdkBuild: sdkBuildDiagnostics() });
       }
       if (url.searchParams.get("sdk") === "probe" && context.env?.BXG_SMOKE_TEST === "1") {
         let transportCalls = 0;
@@ -540,7 +672,35 @@ export async function onRequest(context) {
       const result = await callClient(session, "resolvePlayback", requestTrace, parts[1]);
       const data = selectStream(result, url.searchParams.get("quality") || "best");
       if (!data) return sendError(502, "PLAYBACK_EMPTY", "上游没有返回可用的视频流。");
+      const sources = data._mediaSources || [];
+      const encryption = data._encryption || "";
+      delete data._mediaSources;
+      delete data._encryption;
+      if (data.protected) {
+        if (encryption && encryption.toLowerCase() !== "cenc-aes-ctr") return sendError(415,"CENC_SCHEME_UNSUPPORTED","此分集不是受支持的 CENC AES-CTR 渐进式 MP4。");
+        const key = result?.contentKey?.key;
+        if (typeof key !== "string" || !/^[a-fA-F0-9]{32}$/.test(key)) return sendError(502,"CENC_KEY_UNAVAILABLE","SDK 未能为此受保护分集派生有效的 CENC 内容密钥。");
+        const secret = context.env?.BXG_MEDIA_SECRET;
+        if (typeof secret !== "string" || secret.length < 32) return sendError(503,"MEDIA_SECRET_REQUIRED","请先在 Cloudflare Worker Secrets 中配置 BXG_MEDIA_SECRET（至少 32 个字符）。");
+        let safeSources;
+        try { safeSources=[...new Set(sources.map((source)=>safeMediaSource(source)))].slice(0,2); }
+        catch (_) { return sendError(502,"MEDIA_SOURCE_REJECTED","上游返回的视频地址不符合安全要求。"); }
+        if (!safeSources.length) return sendError(502,"PLAYBACK_EMPTY","上游没有返回可用的受保护视频地址。");
+        const now=Date.now();
+        const upstreamExpiry=Number(data.expires_at)>0?Number(data.expires_at)*1000:now+MEDIA_SESSION_LIFETIME_MS;
+        const expiresAt=Math.min(now+MEDIA_SESSION_LIFETIME_MS,upstreamExpiry);
+        if(expiresAt<=now+10000)return sendError(502,"PLAYBACK_EXPIRED","播放地址即将过期，请重新打开本集。");
+        let mediaToken;
+        try { mediaToken=await sealMediaSession({v:1,sources:safeSources,key,exp:expiresAt,episodeId:parts[1]},secret); }
+        catch (_) { return sendError(503,"MEDIA_SESSION_SEAL_FAILED","无法创建安全的受保护播放会话。"); }
+        data.src="/api/v1/media/"+mediaToken;
+        data.expires_at=Math.floor(expiresAt/1000);
+        debugRecord(session,"info","playback.cenc.session.ready",{episodeId:parts[1],sourceCount:safeSources.length,expiresAt},requestTrace);
+      }
       return sendJson(data);
+    }
+    if (parts[0] === "media" && parts[1]) {
+      return sendResponse(await proxyProtectedMedia(parts[1], request, context.env, session, requestTrace));
     }
     if (parts[0] === "images") {
       const imageUrl = url.searchParams.get("url") || "";

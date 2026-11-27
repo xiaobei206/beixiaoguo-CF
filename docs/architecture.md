@@ -24,7 +24,7 @@ Pages Function 中使用 openhongguo 的 Node.js/WASM SDK，注入基于 Fetch �
 
 已建立：health、discover、search、suggest、hot-search、new-releases、rank、series detail/episodes/seasons、playback resolve。
 
-播放解析只会尝试返回可由浏览器直接播放的非受保护流。受保护 CENC 流不会把内容密钥交给浏览器，当前版本显示明确的暂不可播放提示。
+播放解析为受保护的渐进式 MP4 建立 AES-GCM 加密的短时媒体会话令牌；媒体请求由同源 /api/v1/media/:token 代理校验 HTTP Range，Go/WASM CENC 布局解析器按需把相交的 MP4 元数据与 AES-CTR 样本块还原为可播放字节。明文内容密钥不会返回到浏览器 JSON 或 URL；生产 Worker 必须配置 BXG_MEDIA_SECRET。
 
 ## 运行诊断
 
@@ -32,7 +32,7 @@ Pages Function 中使用 openhongguo 的 Node.js/WASM SDK，注入基于 Fetch �
 
 ## 已知限制
 
-1. CENC 视频：原版的 MP4 样本表解析、Range 按需解密与媒体代理尚未迁移。
+1. CENC 支持范围：已迁移渐进式 MP4 CENC AES-CTR、senc/saiz/saio 辅助信息与任意 Range 解密；HLS/DASH、独立音轨及其他 DRM 封装不在本实现范围内。真实上游分集仍需端到端验收。
 2. 电视接力：公共边缘函数无法直接对用户家庭 LAN 执行 mDNS 或原始 TCP；需要原版 N1 或可访问 LAN 的配套助手。
 3. 图片代理与磁盘缓存：轻量版直接使用上游封面地址，暂不提供 N1 的 RAM + 磁盘两级缓存及预热调度。
 4. 播放兼容性：取决于浏览器对 MP4/HLS、CDN Range/CORS 和编码的支持，应在 iOS Safari、Android Chrome 和桌面浏览器分别验收。
@@ -55,10 +55,15 @@ Pages Function 中使用 openhongguo 的 Node.js/WASM SDK，注入基于 Fetch �
 
 1. CI 验证 Pages Function 打包、WASM 加载与 Worker 运行时。
 2. 用真实上游响应确认推荐、搜索、详情、榜单、新剧和多季字段。
-3. 实现边缘媒体 Range 代理并评估迁移 CENC box/sample 解密逻辑。
+3. 用真实受保护分集端到端验收边缘媒体 Range 代理与 CENC 解密；对不支持的封装明确提示。
 4. 优化封面图片格式回退和 HTTP 缓存。
 5. 保留电视接力给原版 N1，或设计本地 LAN 助手。
 
 ## 部署教程
 
 Pages 与 Workers 的完整配置、GitHub 授权、ZIP／目录上传限制、CLI 命令及验收步骤见 [docs/deploy-cloudflare-cn.md](deploy-cloudflare-cn.md)。
+
+
+## CENC 边缘媒体链路
+
+edge-cenc/cenc 保留 N1 的 MP4 CENC 布局解析与任意 Range 解密实现，并在构建时运行原生 Go 测试、生成独立 Go/WASM 模块。播放解析得到的内容密钥只用于生成 AES-GCM 加密会话令牌；Worker 用 Secret BXG_MEDIA_SECRET 跨 isolate 解封令牌，按字节范围读取 CDN 数据，再通过 WASM 解密当前媒体块。明文源地址和密钥不会以可直接读取的形式写入播放 URL。

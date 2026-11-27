@@ -152,26 +152,44 @@ try {
     await copyFile(source, target);
   }
 
+  const cencRoot = join(ROOT, "edge-cenc");
+  const cencSource = await readFile(join(cencRoot, "cenc/layout.go"), "utf8");
+  for (const token of ["func Open(", "func (l *Layout) Decrypt(", "readAux("]) {
+    if (!cencSource.includes(token)) throw new Error("CENC range-decrypt source is incomplete: " + token);
+  }
+  console.log("[cenc] Run native parser tests");
+  run(go.command, ["test", "./cenc"], { cwd: cencRoot, env });
+  const cencWasmPath = join(packageRoot, "dist", "cenc.wasm");
+  console.log("[cenc] Build edge CENC helper as Go/WASM");
+  run(go.command, ["build", "-trimpath", "-ldflags=-s -w", "-o", cencWasmPath, "./wasm"], {
+    cwd: cencRoot, env: { ...env, GOOS: "js", GOARCH: "wasm" }
+  });
+  const cencWasm = await readFile(cencWasmPath);
+  if (cencWasm.byteLength < 100000) throw new Error("CENC WASM output is unexpectedly small: " + cencWasm.byteLength);
+
   const packageInfo = JSON.parse(await readFile(join(sdkDir, "bindings/node/package.json"), "utf8"));
   const buildInfo = {
     repository: SDK_REPOSITORY,
     ref: SDK_REF,
     commit,
-    goVersion: go.version.match(/go\d+\.\d+(?:\.\d+)?/)?.[0] || go.version,
+    goVersion: go.version.split(" ")[2] || go.version,
     packageVersion: packageInfo.version,
     playbackFallback: "video_tab",
     deviceActivation: true,
     deviceHeartbeat: true,
-    serverIssuedEGDI: true
+    serverIssuedEGDI: true,
+    cencRangeDecrypt: true,
+    cencImplementation: "progressive-mp4-cenc-aes-ctr",
+    cencWasmBytes: cencWasm.byteLength
   };
   await writeFile(
     join(packageRoot, "bxg-build-info.js"),
-    "export const openhongguoBuild = Object.freeze(" + JSON.stringify(buildInfo) + ");\n",
+    "export const openhongguoBuild = Object.freeze(" + JSON.stringify(buildInfo) + ");\\n",
     "utf8"
   );
 
   const wasm = await readFile(join(packageRoot, "dist/openhongguo.wasm"));
-  if (wasm.byteLength < 100_000) throw new Error("自有 openhongguo WASM 产物异常过小：" + wasm.byteLength);
+  if (wasm.byteLength < 100000) throw new Error("自有 openhongguo WASM 产物异常过小：" + wasm.byteLength);
   console.log("[openhongguo] 已安装自有源码构建产物：" + JSON.stringify({ ...buildInfo, wasmBytes: wasm.byteLength }));
 } finally {
   await rm(workDir, { recursive: true, force: true });
