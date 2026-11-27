@@ -168,14 +168,16 @@
       <p id="route-status" class="route-status" role="status" aria-live="polite">默认使用 Cloudflare 自动线路。</p>
       <details class="route-rule-setup">
         <summary>自选 IP 怎样真正生效？（一次性 Cloudflare 设置）</summary>
-        <p>Cloudflare 会过滤 Worker 直接返回的 <code>Alt-Svc</code>。这三条规则只在用户自己的橙云域名上配置。使用 URL 查询参数传递当前选择，不依赖 Pro 版 <code>http.request.cookies</code> 字段；<code>workers.dev</code> 和 <code>pages.dev</code> 默认域名不能配置这类 Zone 规则。</p>
+        <p>Cloudflare 会过滤 Worker 直接返回的 <code>Alt-Svc</code>。这四条规则只在用户自己的橙云域名上配置。浏览器通过一次同源请求把 IP 交给 Worker；Worker 先校验 IP，再将合法值写入内部响应头 <code>X-BXG-Alt-IP</code>，Cloudflare 规则读取该已校验响应头生成 Alt-Svc，最后一条规则删除这个内部头。<code>workers.dev</code> 和 <code>pages.dev</code> 默认域名不能配置这类 Zone 规则。</p>
         <ol>
-          <li>IPv4：匹配 <code>(http.host eq "YOUR_HOSTNAME" and http.request.uri.path eq "/api/v1/route" and len(http.request.uri.args["alt_ip"][0]) gt 0 and http.request.uri.args["alt_ip"][0] ne "auto" and not (http.request.uri.args["alt_ip"][0] contains ":"))</code>；响应头 <code>Alt-Svc</code> 选择 <code>Set dynamic</code>；值 <code>concat("h2=\"", http.request.uri.args["alt_ip"][0], ":443\"; ma=300")</code>。</li>
-          <li>IPv6：匹配 <code>(http.host eq "YOUR_HOSTNAME" and http.request.uri.path eq "/api/v1/route" and http.request.uri.args["alt_ip"][0] contains ":")</code>；响应头 <code>Alt-Svc</code> 选择 <code>Set dynamic</code>；值 <code>concat("h2=\"[", http.request.uri.args["alt_ip"][0], "]:443\"; ma=300")</code>。</li>
-          <li>恢复默认：匹配 <code>(http.host eq "YOUR_HOSTNAME" and http.request.uri.path eq "/api/v1/route" and http.request.uri.args["alt_ip"][0] eq "auto")</code>；响应头 <code>Alt-Svc</code> 选择 <code>Set static</code>；值 <code>clear</code>。</li>
+          <li>IPv4：匹配 <code>(http.host eq "YOUR_HOSTNAME" and http.request.uri.path eq "/api/v1/route" and len(http.response.headers["x-bxg-alt-ip"][0]) gt 0 and http.response.headers["x-bxg-alt-ip"][0] ne "auto" and not (http.response.headers["x-bxg-alt-ip"][0] contains ":"))</code>；响应头 <code>Alt-Svc</code> 选择 <code>Set dynamic</code>；值 <code>concat("h2=\"", http.response.headers["x-bxg-alt-ip"][0], ":443\"; ma=300")</code>。</li>
+          <li>IPv6：匹配 <code>(http.host eq "YOUR_HOSTNAME" and http.request.uri.path eq "/api/v1/route" and http.response.headers["x-bxg-alt-ip"][0] contains ":")</code>；响应头 <code>Alt-Svc</code> 选择 <code>Set dynamic</code>；值 <code>concat("h2=\"[", http.response.headers["x-bxg-alt-ip"][0], "]:443\"; ma=300")</code>。</li>
+          <li>恢复默认：匹配 <code>(http.host eq "YOUR_HOSTNAME" and http.request.uri.path eq "/api/v1/route" and http.response.headers["x-bxg-alt-ip"][0] eq "auto")</code>；响应头 <code>Alt-Svc</code> 选择 <code>Set static</code>；值 <code>clear</code>。</li>
+          <li>清理内部头：匹配 <code>(http.host eq "YOUR_HOSTNAME" and http.request.uri.path eq "/api/v1/route")</code>；响应头名称 <code>X-BXG-Alt-IP</code>；操作选择 <code>Remove</code>。</li>
         </ol>
-        <p>把三处 <code>YOUR_HOSTNAME</code> 替换成实际自定义域名。用户选择线路时，贝小果只在一次同源 API 请求的查询参数中携带 IP；线路列表仍只保存在本机。浏览器只会在建立新连接时尝试切换，正在使用的连接不会被强制中断。反代 IP 还必须能以原网页域名完成 TLS/SNI 验证并支持 HTTP/2。</p>
-        <button id="route-copy-guide" class="settings-secondary" type="button">复制三条规则表达式</button>
+        <p>把四处 <code>YOUR_HOSTNAME</code> 替换成实际自定义域名。原始 IP 只通过同源请求发给 Worker，线路列表仍只保存在本机。浏览器只会在建立新连接时尝试切换，正在使用的连接不会被强制中断。反代 IP 还必须能以原网页域名完成 TLS/SNI 验证并支持 HTTP/2。</p>
+        <button id="route-copy-guide" class="settings-secondary" type="button">复制四条规则表达式</button>
+
       </details>
     </div>
   </dialog>
