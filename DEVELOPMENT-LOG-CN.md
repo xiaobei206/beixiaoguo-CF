@@ -1,5 +1,17 @@
 # 贝小果 Cloudflare 开发日志
 
+## 0.1.12 — 2026-11-27
+
+### CF 真正预载后续短剧媒体
+- 复盘 0.1.11 后确认：CF 侧 6 集只解析了播放地址，没有下载媒体字节，因此它本身不能缩短切集等待。
+- 新增 Cache API 媒体预热：对后续 6 集受保护媒体先 HEAD 取长度，最多 32 MiB 的分集由现有 CENC 管线完整拉取、解密并写入 CF 边缘缓存。
+- 前 3 集在预读接口返回前完成缓存，浏览器再启动 3 个隐藏 video 预载；其余 3 集通过 waitUntil 后台缓存。
+- 媒体缓存用本次加密播放会话 URL 作键，缓存 TTL 不超过令牌有效期；Range 命中后由 Cloudflare Cache API 从完整对象切片返回。
+- Workers 配置启用 Workers Cache；Pages Functions 使用 caches.default。跨数据中心的 Cache API 对象不保证复制，未命中会回源。
+- 超过 32 MiB 的单集跳过整集预热与公共缓存，不影响原有按需 Range 播放。
+- 新增 DEBUG 事件：media.edge-cache.hit / ready / skipped-size / fill-failed，以及播放预热汇总。
+
+
 ## 0.1.11 — 2026-11-27
 
 ### 双层短剧预读
