@@ -30,6 +30,7 @@
         <span class="lan-pill"><span></span> Cloudflare 边缘版</span>
         <button id="install-app-button" class="install-button" type="button" aria-label="添加贝小果到桌面">⇧ 添加到桌面</button>
         <button id="settings-button" class="settings-button" type="button" aria-label="部署教程">↗ 部署教程</button>
+        <button id="debug-log-button" class="debug-button" type="button" aria-label="打开 DEBUG 运行日志">☷ DEBUG <span id="debug-log-count">0</span></button>
       </div>
     </header>
 
@@ -145,6 +146,27 @@
     </div>
   </dialog>
 
+  <dialog id="debug-dialog" class="detail-dialog debug-dialog">
+    <button id="debug-dialog-close" class="dialog-close" type="button" aria-label="关闭">×</button>
+    <div class="detail-content">
+      <div class="debug-heading">
+        <div>
+          <div class="section-kicker">EDGE DIAGNOSTICS</div>
+          <h2>DEBUG 运行日志</h2>
+          <p class="detail-meta">记录当前浏览器会话的 API、上游请求、Go/WASM 和图片加载情况。</p>
+        </div>
+        <span id="debug-runtime-badge" class="debug-runtime-badge">正在读取运行状态</span>
+      </div>
+      <div id="debug-summary" class="debug-summary"></div>
+      <div class="debug-actions">
+        <button id="debug-refresh" class="settings-secondary" type="button">↻ 刷新日志</button>
+        <button id="debug-copy" class="settings-primary" type="button">复制完整诊断包</button>
+        <button id="debug-clear" class="settings-secondary" type="button">清空本会话日志</button>
+      </div>
+      <p class="debug-privacy">日志只返回当前浏览器会话对应的服务端记录；请求参数、完整封面地址、Cookie 和签名信息不会展示。</p>
+      <pre id="debug-output" class="debug-output" aria-live="polite">等待日志…</pre>
+    </div>
+  </dialog>
   <button id="pip-hold-speed" class="pip-hold-speed hold-speed-button" type="button" aria-label="按住临时 2 倍速，松开恢复已设置倍速" hidden>按住 2×</button>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 </body>
