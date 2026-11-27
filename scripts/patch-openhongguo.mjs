@@ -33,6 +33,10 @@ const patchedWasm = "const bytes = globalThis.__BXG_OPENHONGGUO_WASM ?? await re
 const instantiateLine = "const { instance } = await WebAssembly.instantiate(bytes, go.importObject);";
 const patchedInstantiate = "const instantiated = await WebAssembly.instantiate(bytes, go.importObject);\n    const instance = instantiated instanceof WebAssembly.Instance ? instantiated : instantiated.instance;";
 
+
+const runtimePromiseLine = "  })();\n  return runtime;";
+const patchedRuntimePromise = "  })().catch((error) => {\n    runtime = undefined;\n    throw error;\n  });\n  return runtime;";
+
 let changed = false;
 for (const [original, replacement, description] of [
   [requireLine, patchedRequire, "wasm_exec loader"],
@@ -40,7 +44,8 @@ for (const [original, replacement, description] of [
   [runtimeLine, patchedRuntime, "Go runtime diagnostics"],
   [runLine, patchedRun, "Go runtime exit monitor"],
   [wasmLine, patchedWasm, "WASM binary loader"],
-  [instantiateLine, patchedInstantiate, "WASM instantiation result"]
+  [instantiateLine, patchedInstantiate, "WASM instantiation result"],
+  [runtimePromiseLine, patchedRuntimePromise, "failed Go runtime initialization reset"]
 ]) {
   if (source.includes(replacement)) continue;
   if (source.includes(original)) {
