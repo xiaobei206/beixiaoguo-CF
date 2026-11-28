@@ -2,7 +2,7 @@
 
 ### 0.1.18 线上状态复核（2026-11-28 16:30，Asia/Tokyo；未修改应用代码）
 
-- **维护仓库** `xiaobei206/beixiaoguo-CF` 的 `main` 当前为 `d161be8540c25364c7453236c89827882d7be5ec`；该 SHA 只修正交接文档。对应 CI Run [#46116623484](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46116623484) 已成功。应用版本仍是 `0.1.18`。
+- **维护仓库状态时间点：** 本轮复核开始时 `main` 为 `d161be8540c25364c7453236c89827882d7be5ec`，这是仅修正文档的提交，CI Run [#46116623484](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46116623484) 已成功。随后本轮把两份维护文档一并更新到提交 `3a4aae3de256d2c13365d3e02a29baa2f250a5d3`；该文档提交触发的 CI Run [#46126086700](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46126086700) 在最后一次检查时为 `in_progress`。这是文档状态同步，不包含应用代码改动；应用版本仍是 `0.1.18`。
 - **部署 fork** `qmancf206/beixiaoguo-CF` 的 `main` 为 `cc94107d0cd0fcd4805234804775f6e3859ff665`，包含 0.1.18 代码及测试。GitHub 的 Cloudflare Workers and Pages Check Suite [#124755836973](https://api.github.com/repos/qmancf206/beixiaoguo-CF/check-suites/124755836973) 对该 SHA 报告 `completed / success`，变化区间为 `bdf2a735f85ee82d81b88de8f50776b0b8f4541e → cc94107d0cd0fcd4805234804775f6e3859ff665`。这证明 Cloudflare 集成对该提交报告部署检查成功；但本轮仍未拿到生产域名的实时健康接口回包，故**尚不能用浏览器实际响应确认 `w.hiu.us.kg` 当前返回的运行时版本**。
 - **封面故障没有新证据闭环。** 仍缺少 0.1.18 部署后的最新失败图片 `GET /api/v1/images?...` 的状态、响应体与诊断头；上一份 0.1.17 的 `9516` 只说明旧请求解码 HEIC 失败，不能代替本次 GET。没有因此修改任何代码、测试、配置或版本，也没有把问题标记为已修复。
 - **接下来唯一有效动作：** 在生产网站打开 `/api/v1/health`，确认 JSON 的 `version` 是否为 `0.1.18`；然后在 DevTools → Network 中选最新失败的图片 **GET（不要用 HEAD）**，提供 HTTP 状态、响应 JSON/正文、`Content-Type`、`X-BXG-Error-Code`、`X-BXG-Transform-Error-Code`、`X-BXG-Image-Cache`、`X-BXG-Image-Transform`、`X-BXG-Trace-ID`，必要时附 `X-BXG-Debug`。不要粘贴完整签名 URL 或其中的 `x-expires`、`x-signature`。有了这份真实回包后再选择一个可证伪假设做最小修复。
@@ -28,7 +28,7 @@
 
 ### 2. 仓库与代码状态
 
-- 维护仓库：`xiaobei206/beixiaoguo-CF`，以 `main` 为开发基线；0.1.18 协商代码提交 `a9340b6`，iOS 16 / Accept 断言与 9516 回归测试提交 `61e6dc2`。0.1.18 代码基线 CI Run [#46115643235](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46115643235) 成功；当前维护仓库 `main` 为 `d161be8540c25364c7453236c89827882d7be5ec`，属于文档状态校正提交，其 CI Run [#46116623484](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46116623484) 已成功。
+- 维护仓库：`xiaobei206/beixiaoguo-CF`，以 `main` 为开发基线；0.1.18 协商代码提交 `a9340b6`，iOS 16 / Accept 断言与 9516 回归测试提交 `61e6dc2`。0.1.18 代码基线 CI Run [#46115643235](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46115643235) 成功。本轮开始时已核实的文档状态提交 `d161be8540c25364c7453236c89827882d7be5ec` 的 CI Run [#46116623484](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46116623484) 也成功；随后文档状态同步提交 `3a4aae3de256d2c13365d3e02a29baa2f250a5d3` 触发 CI Run [#46126086700](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46126086700)，最后一次核实时正在执行。当前 0.1.18 应用代码基线未改变。
 - 部署 fork：`qmancf206/beixiaoguo-CF` 的 `main` 为 `cc94107d0cd0fcd4805234804775f6e3859ff665`，包含 0.1.18，与维护仓库当前 `main` 的 SHA 不同仅因为维护仓库有后续文档提交。Cloudflare Workers and Pages Check Suite [#124755836973](https://api.github.com/repos/qmancf206/beixiaoguo-CF/check-suites/124755836973) 对 fork 的该 SHA 报告 `completed / success`；这是 Cloudflare 集成层的部署成功记录。**仍需用生产 `GET /api/v1/health` 直接确认 `w.hiu.us.kg` 当前返回的运行时版本，并取得 0.1.18 部署后的失败图片 GET；封面问题仍未解决。** 当前连接对部署 fork 只有 pull=true、push=false。
 - Wrangler Worker 配置：`wrangler.worker.jsonc`；Worker 名称 `beixiaoguo-cf-worker`，入口 `worker.js`。
 - `worker.js` 会把 Worker 的 `env` 原样传给 `functions/api/v1/[[path]].js`。播放逻辑读取 `context.env?.BXG_MEDIA_SECRET`；名称与调用代码一致。现有配置文件未声明同名普通变量。
