@@ -12,7 +12,7 @@
 - 生产 Worker：beixiaoguo-cf-worker；Cloudflare Wrangler 已登录账号 qmancf206@gmail.com，Account ID 为 1ae982074154b7e96337455ee8bacc36。
 - BXG_MEDIA_SECRET 已通过本机生成的强随机值并用 Wrangler 写入生产 Worker。密钥值没有写入 Git；不要轮换或复制到日志中。
 - 用户最新真实播放诊断已确认：GET /api/v1/play/:episodeId 返回 200，出现 edge.playback.cenc.session.ready、player.media.metadata（时长约 97.97 秒）和 player.media.playing。边缘预取 6/6 成功，3 集边缘缓存成功、0 失败，另外 3 集已排入后台缓存。
-- 当前剩余故障是封面图片。真实 Network 请求的源 URL 以 .heic 结尾；上游响应 HTTP 200，但 Content-Type 为 image/heic；当前代理用白名单拒绝它并返回 502 IMAGE_CONTENT_TYPE。Chrome 158 的普通 img 元素不支持直接显示 HEIC，因此单纯放宽 MIME 白名单并不能解决。
+- 生产 fork 尚未同步的旧版本仍有封面图片故障：真实 Network 请求的源 URL 以 .heic 结尾；上游响应 HTTP 200、Content-Type 为 image/heic；旧版代理的 MIME 白名单拒绝该响应并返回 502 IMAGE_CONTENT_TYPE。维护仓库 main 的 0.1.17 已改为 HEIC→WebP 转换，并处理转换失败语义；Chrome 158 的普通 img 元素不支持直接显示 HEIC，因此单纯放宽 MIME 白名单并不能解决。
 - 0.1.15 的初始方案仅按 .heic/.heif 后缀直接转换；0.1.16 加入 Safari 分流、稳定缓存、签名参数规范化及同 isolate 并发合并；0.1.17 修正转换失败语义，并在 proxyCoverImage() 函数级测试中覆盖重定向目标格式变化。测试直接提取生产函数并注入模拟 fetch/Cache API，不覆盖完整 onRequest 路由分发。
 - Cloudflare Images Free 当前每月包含 5,000 个不同转换组合；超出后新转换返回错误而不会对 Free 用量继续收费；Paid 计划超过包含额度后，每 1,000 个额外唯一转换计费 0.50 美元。转换只用于 HEIC／HEIF 来源，需留意生产回包是否成功及账号实际计划。
 - 0.1.17 初始修复提交 5f16ffe 经测试隔离提交 19b27e3 后，CI Run #46111794538 已全部通过；随后重定向边界与失败路径测试提交 1983cdff 的 CI Run #46113661994 也已全部通过（Windows npm test、Linux/静态检查、Pages/Workers 构建及 WASM 运行时 smoke test）。维护仓库修复尚未同步到生产部署 fork，不能声称线上修复已生效。
