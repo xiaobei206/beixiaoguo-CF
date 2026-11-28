@@ -18,6 +18,7 @@ const MAX_DEBUG_EVENTS = 240;
 const DEBUG_LOG_TTL_MS = 60 * 60 * 1000;
 
 import { normalizeRouteIPAddress } from "../../route-ip.js";
+import { imageProxyFetchOptions } from "../../image-proxy-options.js";
 function sanitizeDebugMessage(value) {
   return String(value == null ? "" : value)
     .replace(/https?:\/\/[^\s"'<>]+/gi, (raw) => {
@@ -287,18 +288,7 @@ async function proxyCoverImage(rawUrl, method, session, trace) {
   for (let redirectCount = 0; redirectCount <= 3; redirectCount++) {
     let response;
     try {
-      const fetchOptions = {
-        method: method === "HEAD" ? "HEAD" : "GET",
-        headers: { "Accept": "image/avif,image/webp,image/apng,image/jpeg,image/png,image/*;q=0.8" },
-        redirect: "manual",
-        signal: AbortSignal.timeout(15000),
-      };
-      // Chromium does not render HEIC/HEIF in ordinary <img> elements.
-      // Request Cloudflare's WebP transformation only for these source formats.
-      if (/\.(?:heic|heif)$/i.test(target.pathname)) {
-        fetchOptions.cf = { image: { format: "webp" } };
-      }
-      response = await fetch(target.href, fetchOptions);
+      response = await fetch(target.href, imageProxyFetchOptions(target, method));
     } catch (error) {
       debugRecord(session, "error", "image.proxy.fetch.error", {
         host: target.hostname, durationMs: Date.now() - startedAt,
