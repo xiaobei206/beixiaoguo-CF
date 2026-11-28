@@ -3,14 +3,14 @@
 ### 0.1.19 上游图片探测 DEBUG 专版（2026-11-28）
 
 - **生产真实证据：** 0.1.18 的封面 GET 返回 503 `IMAGE_TRANSFORM_UNAVAILABLE`，`X-BXG-Transform-Error-Code: 9516`，`X-BXG-Image-Cache: MISS`，`X-BXG-Image-Transform: unavailable`；trace `d8b61985-9bb0-4869-aed5-df8e2cac841b` 显示 Cloudflare 转换 HTTP 422，并明确为 HEIC 解码失败。
-- **新版本代码：** 维护仓库提交 `31bf7de998402c1bede170e8aff0f55e8274b468`，版本 0.1.19；CI Run [#46127619086](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46127619086) 在本轮记录时正在执行。部署 fork 仍为 0.1.18 的 `cc94107d0cd0fcd4805234804775f6e3859ff665`；0.1.19 尚未部署。
+- **新版本代码：** 维护仓库提交 `31bf7de998402c1bede170e8aff0f55e8274b468`，版本 0.1.19；CI Run [#46127619086](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46127619086) 已通过（Linux build-and-smoke、Windows npm test 均成功）。部署 fork 仍为 0.1.18 的 `cc94107d0cd0fcd4805234804775f6e3859ff665`；0.1.19 尚未部署。
 - **诊断设计：** 主页增加“上游探测”按钮和独立弹窗，失败的原始 HEIC/HEIF URL 只暂存在页面内存中；后端用不带 `cf.image` 的普通 Worker GET 对同一 URL 测 7 组 Accept（WebP、AVIF、HEIC、JPEG/PNG、浏览器常见、全格式优先序、不显式设置），另测 .webp/.avif/.jpeg 路径变体和历史 `x-tos-process`/`x-oss-process` 参数。正常封面链路不变。
 - **安全和判读：** 只允许 HTTPS `*.fqnovelpic.com`，手动跟随最多 2 次且重定向仍须在此域；最多 3 路并发、每项 5 秒、每会话 30 秒限一次；成功图片只读响应头后取消 body，错误文本限 512 字节；结果不会回显完整 URL、签名或 expiry。修改过 URL 的变体可能因签名校验返回 403，不能当作该格式不受支持。
 - **接下来：** 等 CI Run #181 完成。通过后才同步部署 fork；验证生产健康接口为 0.1.19，点击“上游探测”并把结果报告带回。先以真实结果判断是否可直出 WebP/AVIF/JPEG，再决定后续是否改正式图片请求。当前不能说封面已经恢复。
 
 ## 当前排障交接（2026-11-28；新对话请先读）
 
-> **当前主线：0.1.19 上游图片探测诊断版已提交维护仓库，但尚未通过 CI 或部署。** 用户最新真实生产 GET 确认应用运行 0.1.18，图片代理返回 503 `IMAGE_TRANSFORM_UNAVAILABLE`；诊断头 `X-BXG-Transform-Error-Code: 9516`，边缘 trace `d8b61985-9bb0-4869-aed5-df8e2cac841b` 的事件说明 Cloudflare 图片转换 HTTP 422，错误正文明确为 HEIC 解码失败。此问题未解决；0.1.19 不改正式图片代理，只添加独立探测工具。
+> **当前主线：0.1.19 上游图片探测诊断版已提交维护仓库且 CI 已通过，但尚未同步部署。** 用户最新真实生产 GET 确认应用运行 0.1.18，图片代理返回 503 `IMAGE_TRANSFORM_UNAVAILABLE`；诊断头 `X-BXG-Transform-Error-Code: 9516`，边缘 trace `d8b61985-9bb0-4869-aed5-df8e2cac841b` 的事件说明 Cloudflare 图片转换 HTTP 422，错误正文明确为 HEIC 解码失败。此问题未解决；0.1.19 不改正式图片代理，只添加独立探测工具。
 
 > **Cloudflare 来源白名单结论保持不变：** Images source allowlist 针对 `/cdn-cgi/image/` URL 转换，不适用于 Worker `fetch()` 子请求上的 `cf.image`。不要为了这个故障新增来源白名单或开放 Any origin。VeImageX 格式自适应优先级为 HEIC > AVIF > WebP；官方文档也存在模板输出格式、旧式 `x-tos-process` / `x-oss-process` 图片处理参数。它们是待探测线索，并不证明当前签名模板支持改写。
 
@@ -24,7 +24,7 @@
 
 ### 2. 仓库与代码状态
 
-- 维护仓库：`xiaobei206/beixiaoguo-CF`，`main` 代码提交 `31bf7de998402c1bede170e8aff0f55e8274b468`，版本 `0.1.19`；CI Run [#46127619086](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46127619086) 在本轮交接更新时仍为 `in_progress`。Run 必须完成并通过后才能同步部署。
+- 维护仓库：`xiaobei206/beixiaoguo-CF`，`main` 代码提交 `31bf7de998402c1bede170e8aff0f55e8274b468`，版本 `0.1.19`；CI Run [#46127619086](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46127619086) 已通过，包含 Linux build-and-smoke 与 Windows npm test。可以准备快进同步部署 fork，但生产验收必须等 Worker Build 完成。
 - 部署 fork：`qmancf206/beixiaoguo-CF` 的 `main` 仍为 `cc94107d0cd0fcd4805234804775f6e3859ff665`，仅包含 0.1.18；Cloudflare 对该旧 SHA 的检查套件 [#124755836973](https://api.github.com/repos/qmancf206/beixiaoguo-CF/check-suites/124755836973) 曾报告成功，不能当成 0.1.19 已部署。
 - 本次提交新增 `functions/image-probe.js`、`scripts/test-image-probe.mjs`、`POST /api/v1/debug/image-probe`、主页“上游探测”按钮和独立弹窗。正常的 `proxyCoverImage()` 正式图片请求流程没有改变。
 - 探针限制：只接受 HTTPS `*.fqnovelpic.com`、无端口/凭据且 HEIC/HEIF 后缀的 URL；12 组 GET、最多 3 路并发、单项 5 秒、最多跟随 2 次同图片域重定向；每会话 30 秒一次；只读取响应头/Content-Length 和最多 512 字节错误文本；报告不含完整 URL、签名、过期值。改写路径/查询参数的实验可能被签名校验拒绝。
@@ -78,11 +78,11 @@ npm.cmd test
 
 ### 5. 当前未解决：等待 0.1.19 上游探测结果
 
-用户已提供最新 0.1.18 生产失败 GET；错误码 9516 与 HEIC 解码失败已经确认。0.1.19 是独立诊断工具版，尚未通过本轮 CI/同步部署，不能把源码测试结果当成实际源站验证。
+用户已提供最新 0.1.18 生产失败 GET；错误码 9516 与 HEIC 解码失败已经确认。0.1.19 是独立诊断工具版，CI 已通过但仍未同步部署，不能把 Mock 测试结果当成实际源站验证。
 
 运行步骤：
 
-1. 先确认维护仓库 CI Run [#46127619086](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46127619086) 通过。
+1. 维护仓库 CI Run [#46127619086](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46127619086) 已通过；接下来由有权限账号同步部署 fork，不能因 CI 通过而直接宣称生产已升级。
 2. 将维护仓库的 0.1.19 快进同步到 `qmancf206/beixiaoguo-CF`；由 Cloudflare Worker Build 部署后访问 `GET /api/v1/health`，确认 `version=0.1.19`。
 3. 打开主页“上游探测”。通常会自动带入本次失败的 HEIC 源 URL；如果为空，在页面上粘贴浏览器内的原始 URL。点击“开始 12 组 GET 探测”，复制探测报告即可，不要另行复制完整签名 URL。
 4. 重点看未修改 URL 的 `accept-webp`、`accept-avif` 和 `accept-unset`：

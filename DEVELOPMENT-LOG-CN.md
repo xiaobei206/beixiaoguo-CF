@@ -11,9 +11,9 @@
 ### 测试与验证状态
 - 新增 `scripts/test-image-probe.mjs`，以 Mock 覆盖 12 个 GET 变体、GET-only、不使用 `cf.image`、HTTPS/主机/端口/后缀限制、签名信息脱敏、拒绝跨域重定向和错误文本长度控制。
 - Mock 证明的是代码分支与安全边界，不代表真实 VeImageX 会按某个 Accept 返回指定 MIME；真实源站结论必须等 0.1.19 部署后由主页探测工具实测。
-- 维护仓库代码提交：`31bf7de998402c1bede170e8aff0f55e8274b468`。对应 CI Run [#46127619086](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46127619086) 在本次交接文档写入时仍在执行。
+- 维护仓库代码提交：`31bf7de998402c1bede170e8aff0f55e8274b468`。CI Run [#46127619086](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46127619086) 已通过（Linux build-and-smoke、Windows npm test）。
 - 部署 fork `qmancf206/beixiaoguo-CF` 仍为 0.1.18 的 `cc94107d0cd0fcd4805234804775f6e3859ff665`；生产当前仍显示 0.1.18。不得宣称诊断版已部署或封面已修复。
-- 下一步：先确认 Run #181 完成且成功，再由有权限账号同步部署 fork、检查生产健康接口返回 0.1.19，运行一次探测并解读真实结果；如果探测显示源站直接返回 WebP，才准备后续绕开 `cf.image` 的生产代码变更。
+- 下一步：由有权限账号将 0.1.19 快进同步到部署 fork，等 Cloudflare Worker Build 完成后检查生产健康接口返回 0.1.19，再运行一次探测并解读真实结果；如果探测显示源站直接返回 WebP，才准备后续绕开 `cf.image` 的生产代码变更。文档同步提交 `2e6cdf54cf778dae5c3d1f6420bb6804d1da54b2` 触发的 CI Run [#46127721563](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46127721563) 在本次复核时仍在执行。
 
 ## 2026-11-28：0.1.18 线上失败 GET 证据（补录）
 
