@@ -3,7 +3,7 @@ import { createClient, SearchFilter } from "openhongguo";
 import { ensureCencRuntime } from "../../cenc-runtime.js";
 import { openMediaSession, parseByteRange, parseContentRange, safeMediaSource, sealMediaSession } from "../../media-session.js";
 
-const VERSION = "0.1.20";
+const VERSION = "0.1.21";
 const MAX_CLIENTS = 128;
 const MAX_PROFILES = 256;
 const clients = new Map();
@@ -18,7 +18,7 @@ const MAX_DEBUG_EVENTS = 240;
 const DEBUG_LOG_TTL_MS = 60 * 60 * 1000;
 
 import { normalizeRouteIPAddress } from "../../route-ip.js";
-import { browserSupportsNativeHeic, imageCacheKeyUrl, imageProxyFetchOptions, isHeicImageUrl } from "../../image-proxy-options.js";
+import { browserSupportsNativeHeic, imageProxyFetchOptions, isHeicImageUrl } from "../../image-proxy-options.js";
 import { probeUpstreamImage } from "../../image-probe.js";
 function sanitizeDebugMessage(value) {
   return String(value == null ? "" : value)
@@ -269,28 +269,12 @@ async function callClient(session, method, trace, ...args) {
     if (sessionQueues.get(session) === queued) sessionQueues.delete(session);
   }
 }
-const IMAGE_EDGE_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
-const imageTransformFlights = new Map();
 const imageProbeLastRuns = new Map();
 const IMAGE_PROBE_COOLDOWN_MS = 30000;
 
-function edgeImageCache() {
-  try { return globalThis.caches?.default || null; } catch (_) { return null; }
-}
-
-function imageResponseWithHeader(response, name, value) {
-  const clone = response.clone();
-  const headers = new Headers(clone.headers);
-  headers.set(name, value);
-  return new Response(clone.body, { status: clone.status, statusText: clone.statusText, headers });
-}
-
-async function proxyCoverImageUncached(target, method, session, trace, userAgent, transformRequested, cache, cacheKey) {
+async function proxyCoverImageUncached(target, method, session, trace, userAgent) {
   const startedAt = Date.now();
-  let transformEnabled = transformRequested;
-  const fetchCurrent = (enableTransform) =>
-    fetch(target.href, imageProxyFetchOptions(target, method, userAgent, enableTransform));
-
+  const fetchCurrent = () => fetch(target.href, imageProxyFetchOptions(target, method));
   const handleRedirect = (response, redirectCount) => {
     if (response.status < 300 || response.status >= 400) return null;
     const location = response.headers.get("location");
@@ -301,18 +285,12 @@ async function proxyCoverImageUncached(target, method, session, trace, userAgent
       return errorResponse(502, "IMAGE_REDIRECT_LIMIT", "上游封面重定向次数过多或缺少 Location。");
     }
     try {
-      const next = new URL(location, target);
-      const host = next.hostname.toLowerCase();
+      const next = new URL(location, target), host = next.hostname.toLowerCase();
       if (next.protocol !== "https:" || next.username || next.password || next.port ||
           !(host === "fqnovelpic.com" || host.endsWith(".fqnovelpic.com"))) {
         throw new Error("封面重定向到了未允许的图片域名");
       }
       target = next;
-      // A redirect can change the actual image format. Only keep the WebP
-      // transformation requirement when the new target is still HEIC/HEIF.
-      transformEnabled = transformRequested &&
-        isHeicImageUrl(target) &&
-        !browserSupportsNativeHeic(userAgent);
       return true;
     } catch (error) {
       debugRecord(session, "error", "image.proxy.redirect.rejected", {
@@ -325,54 +303,19 @@ async function proxyCoverImageUncached(target, method, session, trace, userAgent
   for (let redirectCount = 0; redirectCount <= 3; redirectCount++) {
     let response;
     try {
-      response = await fetchCurrent(transformEnabled);
+      response = await fetchCurrent();
     } catch (error) {
-      if (!transformEnabled) {
-        debugRecord(session, "error", "image.proxy.fetch.error", {
-          host: target.hostname, durationMs: Date.now() - startedAt,
-          message: sanitizeDebugMessage(error?.message || error)
-        }, trace);
-        return errorResponse(502, "IMAGE_UPSTREAM_FETCH", "Cloudflare 获取上游封面失败：" + sanitizeDebugMessage(error?.message || error));
-      }
-      debugRecord(session, "error", "image.transform.unavailable", {
-        host: target.hostname, reason: "fetch-failed",
+      debugRecord(session, "error", "image.proxy.fetch.error", {
+        host: target.hostname, durationMs: Date.now() - startedAt,
         message: sanitizeDebugMessage(error?.message || error)
       }, trace);
-      return errorResponse(503, "IMAGE_TRANSFORM_UNAVAILABLE", "Cloudflare 图片转换暂不可用，当前浏览器无法直接显示 HEIC/HEIF 原图。", {
-        "Cache-Control": "no-store",
-        "X-BXG-Image-Transform": "unavailable",
-        "X-BXG-Transform-Error-Code": "FETCH_FAILED"
-      });
+      return errorResponse(502, "IMAGE_UPSTREAM_FETCH", "Cloudflare 获取上游封面失败：" + sanitizeDebugMessage(error?.message || error));
     }
-
     const redirect = handleRedirect(response, redirectCount);
     if (redirect instanceof Response) return redirect;
     if (redirect === true) continue;
 
-    let contentType = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
-    // Never report original HEIC as a usable success to browsers requiring
-    // WebP. Includes Images Free 9422 quota exhaustion.
-    if (transformEnabled && (!response.ok || contentType !== "image/webp")) {
-      let responseDetail = "";
-      try { responseDetail = (await response.clone().text()).slice(0, 600); } catch (_) {}
-      const headerErrorCode = response.headers.get("cf-error-code") || response.headers.get("x-cf-error-code") || "";
-      const quota = /\b9422\b/.test(headerErrorCode + " " + responseDetail);
-      const providerErrorCode = responseDetail.match(/\bERROR\s+(\d{4})\b/i)?.[1] || "";
-      const transformErrorCode = quota ? "9422" : (headerErrorCode || providerErrorCode || (!response.ok ? "HTTP_" + response.status : "UNEXPECTED_CONTENT_TYPE"));
-      debugRecord(session, "error", "image.transform.unavailable", {
-        host: target.hostname, status: response.status, contentType, transformErrorCode,
-        responseDetail: sanitizeDebugMessage(responseDetail)
-      }, trace);
-      return errorResponse(503, "IMAGE_TRANSFORM_UNAVAILABLE", quota
-        ? "Cloudflare Images 本月免费转换额度已用尽；当前浏览器无法显示原始 HEIC/HEIF。"
-        : "Cloudflare 无法将此 HEIC/HEIF 封面转换为 WebP；当前浏览器无法显示原始格式。", {
-          "Cache-Control": "no-store",
-          "X-BXG-Image-Transform": "unavailable",
-          "X-BXG-Transform-Error-Code": String(transformErrorCode).slice(0, 80)
-        });
-    }
-
-    const length = Number(response.headers.get("content-length")) || 0;
+    const contentType = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
     if (!response.ok) {
       debugRecord(session, "warn", "image.proxy.upstream.response", {
         host: target.hostname, status: response.status, contentType, durationMs: Date.now() - startedAt
@@ -385,48 +328,35 @@ async function proxyCoverImageUncached(target, method, session, trace, userAgent
       }, trace);
       return errorResponse(502, "IMAGE_CONTENT_TYPE", "上游响应不是受支持的图片格式。");
     }
+    const length = Number(response.headers.get("content-length")) || 0;
     if (length > (10 << 20)) return errorResponse(413, "IMAGE_TOO_LARGE", "上游封面超过 10 MiB 限制。");
-
     let body = null;
     if (method !== "HEAD") {
-      const bytes = await response.arrayBuffer();
+      let bytes;
+      try { bytes = await response.arrayBuffer(); }
+      catch (error) {
+        debugRecord(session, "error", "image.proxy.read.error", {
+          host: target.hostname, message: sanitizeDebugMessage(error?.message || error)
+        }, trace);
+        return errorResponse(502, "IMAGE_UPSTREAM_READ", "读取上游图片失败。");
+      }
       if (bytes.byteLength > (10 << 20)) return errorResponse(413, "IMAGE_TOO_LARGE", "上游封面超过 10 MiB 限制。");
       body = bytes;
     }
-
-    const transformedToWebp = transformRequested && transformEnabled && contentType === "image/webp";
     const nativeHeic = isHeicImageUrl(target) && browserSupportsNativeHeic(userAgent);
-    // Cache API does not implement stale-while-revalidate.
-    const cacheControl = transformedToWebp
-      ? "public, max-age=" + IMAGE_EDGE_CACHE_TTL_SECONDS
-      : "public, max-age=300, stale-while-revalidate=3600";
     const headers = new Headers({
       "Content-Type": contentType,
-      "Cache-Control": cacheControl,
+      "Cache-Control": "public, max-age=300",
       "X-Content-Type-Options": "nosniff",
       "X-BXG-Image-Proxy": "1",
-      "X-BXG-Image-Transform": transformedToWebp ? "webp" : (nativeHeic ? "native-heic" : (transformRequested ? (transformEnabled ? "fallback-original" : "redirected-format") : "none")),
+      "X-BXG-Image-Transform": nativeHeic ? "native-heic" : "none",
     });
     for (const name of ["etag", "last-modified"]) {
       const value = response.headers.get(name);
       if (value) headers.set(name, value);
     }
-
     const output = new Response(body, { status: 200, headers });
-    if (transformedToWebp && method !== "HEAD" && cache && cacheKey) {
-      try {
-        await cache.put(cacheKey, output.clone());
-        debugRecord(session, "info", "image.cache.stored", {
-          host: target.hostname, bytes: body ? body.byteLength : 0, ttlSeconds: IMAGE_EDGE_CACHE_TTL_SECONDS
-        }, trace);
-      } catch (error) {
-        debugRecord(session, "warn", "image.cache.store.failed", {
-          host: target.hostname, message: sanitizeDebugMessage(error?.message || error)
-        }, trace);
-      }
-    }
-
-    debugRecord(session, transformedToWebp ? "info" : "debug", transformedToWebp ? "image.transform.success" : "image.proxy.success", {
+    debugRecord(session, "debug", "image.proxy.success", {
       host: target.hostname, status: response.status, contentType,
       transform: headers.get("X-BXG-Image-Transform"),
       bytes: body ? body.byteLength : 0, durationMs: Date.now() - startedAt
@@ -438,83 +368,24 @@ async function proxyCoverImageUncached(target, method, session, trace, userAgent
 
 async function proxyCoverImage(rawUrl, method, session, trace, request, sourceOnly = false) {
   const parseTarget = (value) => {
-    const target = new URL(value);
-    const host = target.hostname.toLowerCase();
+    const target = new URL(value), host = target.hostname.toLowerCase();
     if (target.protocol !== "https:" || target.username || target.password || target.port ||
         !(host === "fqnovelpic.com" || host.endsWith(".fqnovelpic.com"))) {
       throw new Error("封面地址不属于允许的 HTTPS 图片域名");
     }
     return target;
   };
-
   let target;
   try { target = parseTarget(rawUrl); }
   catch (error) {
     debugRecord(session, "warn", "image.proxy.rejected", { message: error.message }, trace);
     return errorResponse(400, "IMAGE_URL_REJECTED", error.message);
   }
-
   if (sourceOnly && (method !== "GET" || !isHeicImageUrl(target))) {
     return errorResponse(400, "IMAGE_SOURCE_MODE_INVALID", "原始 HEIC/HEIF 模式仅允许受限源站的 GET 请求。");
   }
   const userAgent = request.headers.get("user-agent") || "";
-  const needsWebp = !sourceOnly && isHeicImageUrl(target) && !browserSupportsNativeHeic(userAgent);
-  const transformRequested = needsWebp && method !== "HEAD";
-  let cache = null;
-  let cacheKey = null;
-
-  if (needsWebp) {
-    cache = edgeImageCache();
-    try {
-      cacheKey = new Request(await imageCacheKeyUrl(request.url, target, "webp"), { method: "GET" });
-    } catch (error) {
-      debugRecord(session, "warn", "image.cache.key.failed", {
-        host: target.hostname, message: sanitizeDebugMessage(error?.message || error)
-      }, trace);
-    }
-
-    if (cache && cacheKey) {
-      try {
-        const cached = await cache.match(cacheKey);
-        if (cached) {
-          debugRecord(session, "info", "image.cache.hit", {
-            host: target.hostname, format:"webp", cacheKey:cacheKey.url.split("/").pop()
-          }, trace);
-          const headers = new Headers(cached.headers);
-          headers.set("X-BXG-Image-Cache", "HIT");
-          if (method === "HEAD") return new Response(null, { status: cached.status, statusText: cached.statusText, headers });
-          return new Response(cached.body, { status: cached.status, statusText: cached.statusText, headers });
-        }
-        debugRecord(session, "debug", "image.cache.miss", {
-          host: target.hostname, format:"webp", cacheKey:cacheKey.url.split("/").pop()
-        }, trace);
-      } catch (error) {
-        debugRecord(session, "warn", "image.cache.lookup.failed", {
-          host: target.hostname, message: sanitizeDebugMessage(error?.message || error)
-        }, trace);
-      }
-    }
-  }
-
-  if (method === "GET" && transformRequested && cacheKey) {
-    const key = cacheKey.url;
-    const pending = imageTransformFlights.get(key);
-    if (pending) {
-      debugRecord(session, "debug", "image.cache.inflight.join", { host: target.hostname }, trace);
-      try { return imageResponseWithHeader(await pending, "X-BXG-Image-Cache", "COALESCED"); }
-      catch (_) { /* A failed shared request gets one independent retry. */ }
-    }
-
-    const task = proxyCoverImageUncached(target, method, session, trace, userAgent, true, cache, cacheKey);
-    imageTransformFlights.set(key, task);
-    try {
-      return imageResponseWithHeader(await task, "X-BXG-Image-Cache", cache ? "MISS" : "BYPASS");
-    } finally {
-      if (imageTransformFlights.get(key) === task) imageTransformFlights.delete(key);
-    }
-  }
-
-  return proxyCoverImageUncached(target, method, session, trace, userAgent, transformRequested, cache, cacheKey);
+  return proxyCoverImageUncached(target, method, session, trace, userAgent);
 }
 
 const MAX_MEDIA_RANGE_BYTES = 32 << 20;

@@ -21,7 +21,7 @@
   let settingsRefreshTimer = 0;
   let deferredInstallPrompt = null;
   const DEBUG_STORAGE_KEY = "beixiaoguo.cf.debug-log";
-  const APP_VERSION = "0.1.20";
+  const APP_VERSION = "0.1.21";
   const EDGE_PREFETCH_COUNT = 6;
   const BROWSER_PRELOAD_COUNT = 3;
   const MAX_DEBUG_ENTRIES = 180;
@@ -35,12 +35,10 @@
   let serverDebugRuntime = null;
   let imageProbeStarted = false;
   let lastFailedCoverUrl = "";
-  let clientHeicFallbackMode = false;
   let heicConverterPromise = null;
   let activeHeicConversions = 0;
   const heicConversionWaiters = [];
   const HEIC_CLIENT_MAX_BYTES = 10 << 20;
-  const HEIC_PENDING_PIXEL = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
   let lastImageProbeResult = null;
   function todayDateKey() {
     const now = new Date();
@@ -104,16 +102,13 @@
   function safeImage(value) {
     const raw = String(value || "").trim();
     if (/^\/api\/v1\/images(?:\?|\/)/i.test(raw)) {
-      if (!clientHeicFallbackMode) return raw;
       try {
         const proxy = new URL(raw, window.location.origin);
         const source = proxy.searchParams.get("url");
-        if (source && isAllowedHeicSource(source)) {
-          proxy.searchParams.set("mode", "source");
-          return proxy.pathname + proxy.search;
-        }
-      } catch (_) {}
-      return raw;
+        const sourceUrl = proxy.searchParams.get("url");
+        if (sourceUrl && isAllowedHeicSource(sourceUrl)) proxy.searchParams.set("mode", "source");
+        return proxy.pathname + proxy.search;
+      } catch (_) { return raw; }
     }
     if (!raw) return "";
     try {
@@ -134,7 +129,7 @@
       if (host === "fqnovelpic.com" || host.endsWith(".fqnovelpic.com")) {
         const proxy = new URL("/api/v1/images", window.location.origin);
         proxy.searchParams.set("url", parsed.href);
-        if (clientHeicFallbackMode && isHeicSourceUrl(parsed)) proxy.searchParams.set("mode", "source");
+        if (isHeicSourceUrl(parsed)) proxy.searchParams.set("mode", "source");
         return proxy.pathname + proxy.search;
       }
       return parsed.href;
@@ -916,33 +911,36 @@
       const source = new URL("/api/v1/images", window.location.origin);
       source.searchParams.set("url", sourceUrl.href);
       source.searchParams.set("mode", "source");
+      image.dataset.heicConversionStage = "source-fetch";
       let response;
       try {
         response = await fetch(source.href, {
-          method:"GET",
-          headers:{"X-BXG-Session":playbackClientId},
-          credentials:"same-origin",
-          cache:"default",
-          signal:AbortSignal.timeout(12000)
+          method:"GET", headers:{"X-BXG-Session":playbackClientId},
+          credentials:"same-origin", cache:"default", signal:AbortSignal.timeout(12000)
         });
       } catch (_) {
         throw Object.assign(new Error("IMAGE_HEIC_SOURCE_FETCH_FAILED"), {code:"IMAGE_HEIC_SOURCE_FETCH_FAILED"});
       }
+      const contentType = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+      const length = Number(response.headers.get("content-length")) || 0;
       if (!response.ok) {
         try { await response.body?.cancel(); } catch (_) {}
         throw Object.assign(new Error("IMAGE_HEIC_SOURCE_HTTP_ERROR"), {code:"IMAGE_HEIC_SOURCE_HTTP_ERROR"});
       }
-      const contentType = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
-      const length = Number(response.headers.get("content-length")) || 0;
       if (!/^image\/(?:heic|heif)$/.test(contentType) || length > HEIC_CLIENT_MAX_BYTES) {
         try { await response.body?.cancel(); } catch (_) {}
         throw Object.assign(new Error("IMAGE_HEIC_SOURCE_INVALID"), {code:"IMAGE_HEIC_SOURCE_INVALID"});
       }
+      image.dataset.heicConversionStage = "source-read";
       const sourceBlob = await response.blob();
       if (!sourceBlob.size || sourceBlob.size > HEIC_CLIENT_MAX_BYTES) {
         throw Object.assign(new Error("IMAGE_HEIC_SOURCE_SIZE_INVALID"), {code:"IMAGE_HEIC_SOURCE_SIZE_INVALID"});
       }
+      if (!image.isConnected) return;
+      image.dataset.heicConversionStage = "decoder-load";
       const decoder = await loadHeicConverter();
+      if (!image.isConnected) return;
+      image.dataset.heicConversionStage = "decode";
       const jpeg = await decoder({blob:sourceBlob,type:"image/jpeg",quality:0.84});
       if (!(jpeg instanceof Blob) || !jpeg.size || jpeg.size > HEIC_CLIENT_MAX_BYTES) {
         throw Object.assign(new Error("IMAGE_HEIC_CONVERSION_OUTPUT_INVALID"), {code:"IMAGE_HEIC_CONVERSION_OUTPUT_INVALID"});
@@ -950,36 +948,43 @@
       if (!image.isConnected) return;
       const objectUrl = URL.createObjectURL(jpeg);
       image.dataset.heicObjectUrl = objectUrl;
+      image.dataset.heicConversionStage = "display";
       const cleanup = () => {
         if (image.dataset.heicObjectUrl !== objectUrl) return;
         try { URL.revokeObjectURL(objectUrl); } catch (_) {}
         delete image.dataset.heicObjectUrl;
       };
-      image.addEventListener("load", cleanup, {once:true});
+      image.addEventListener("load", () => {
+        image.style.visibility = "";
+        debugWrite("info", "image.heic.client-convert.success", {
+          sourceHost:sourceUrl.hostname,inputBytes:sourceBlob.size,outputBytes:jpeg.size
+        });
+        cleanup();
+      }, {once:true});
       image.addEventListener("error", cleanup, {once:true});
       image.src = objectUrl;
-      debugWrite("info", "image.heic.client-convert.success", {
-        sourceHost:sourceUrl.hostname,inputBytes:sourceBlob.size,outputBytes:jpeg.size
-      });
     });
   }
 
   function startHeicGridConversion(image, sourceUrl) {
     if (!image || !image.isConnected || image.dataset.heicFallbackAttempted === "1") return;
     image.dataset.heicFallbackAttempted = "1";
-    image.src = HEIC_PENDING_PIXEL;
+    image.dataset.heicConversionStage = "queued";
+    // Do not change src to a temporary data: pixel; that can trigger another
+    // IMG error and detach this element before the async decoder is finished.
+    image.style.visibility = "hidden";
+    debugWrite("debug", "image.heic.client-convert.started", {sourceHost:sourceUrl.hostname});
     convertHeicGridImage(image, sourceUrl).catch((error) => {
       const rawCode = String(error && error.code || "");
       const code = /^IMAGE_[A-Z_]+$/.test(rawCode) ? rawCode : "IMAGE_HEIC_CONVERSION_FAILED";
-      debugWrite("warn", "image.heic.client-convert.failed", {sourceHost:sourceUrl.hostname,code});
+      debugWrite("warn", "image.heic.client-convert.failed", {
+        sourceHost:sourceUrl.hostname,code,stage:image.dataset.heicConversionStage || "unknown"
+      });
       if (image.isConnected) replaceBrokenGridImage(image);
     });
   }
 
   function enableClientHeicFallback(failedImage, failedSourceUrl) {
-    clientHeicFallbackMode = true;
-    // Convert only the image that failed. Other visible or lazy-loaded covers
-    // fall back independently on their own error event; new ones use mode=source.
     startHeicGridConversion(failedImage, failedSourceUrl);
   }
 
@@ -987,6 +992,11 @@
     const image = event.target;
     if (!image || image.tagName !== "IMG") return;
     if (image.dataset.heicFallbackAttempted === "1") {
+      const sourceUrl = imageSourceDetails(image);
+      debugWrite("error", "image.heic.client-convert.display-failed", {
+        sourceHost:sourceUrl ? sourceUrl.hostname : "",
+        stage:image.dataset.heicConversionStage || "display"
+      });
       replaceBrokenGridImage(image);
       return;
     }
@@ -994,17 +1004,16 @@
     try { imageHost = new URL(image.currentSrc || image.src).hostname; } catch (_) {}
     const sourceUrl = imageSourceDetails(image);
     const originalHost = sourceUrl ? sourceUrl.hostname : "";
-    const requiresWebp = !!sourceUrl && isHeicSourceUrl(sourceUrl) && !browserSupportsNativeHeicForUi();
-    debugWrite(requiresWebp ? "error" : "warn", requiresWebp ? "image.heic.transform.display-failed" : "image.load.error", {
+    const requiresClientDecode = !!sourceUrl && isHeicSourceUrl(sourceUrl) && !browserSupportsNativeHeicForUi();
+    debugWrite(requiresClientDecode ? "error" : "warn", requiresClientDecode ? "image.heic.raw-source.display-failed" : "image.load.error", {
       proxyHost:imageHost, sourceHost:originalHost,
       sourceFormat:sourceUrl ? sourceUrl.pathname.split(".").pop().toLowerCase() : "",
       retryCount:Number(image.dataset.retryCount) || 0,
-      action:requiresWebp ? "client-heic-conversion-fallback" : "normal-retry"
+      action:requiresClientDecode ? "client-heic-conversion" : "normal-retry"
     });
 
-    // The source signs a fixed HEIC output. Keep its URL intact and convert locally
-    // only after the optimized Cloudflare WebP path fails.
-    if (requiresWebp) {
+    // Unsupported browsers request original HEIC bytes and convert locally.
+    if (requiresClientDecode) {
       if (isAllowedHeicSource(sourceUrl)) {
         lastFailedCoverUrl = sourceUrl.href;
         enableClientHeicFallback(image, sourceUrl);
@@ -2817,6 +2826,7 @@
   window.addEventListener("error", (event) => {
     const target = event.target;
     if (target && target.tagName === "IMG") {
+      if (target.dataset && target.dataset.heicFallbackAttempted === "1") return;
       let host = "";
       try { host = new URL(target.currentSrc || target.src).hostname; } catch (_) {}
       debugWrite("warn", "image.resource.error", {host});

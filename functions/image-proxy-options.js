@@ -1,4 +1,3 @@
-const EPHEMERAL_IMAGE_QUERY_PARAMETERS = new Set(["x-expires", "x-signature", "_bxg_retry"]);
 const HEIC_EXTENSION = /\.(?:heic|heif)$/i;
 
 export function isHeicImageUrl(target) {
@@ -15,47 +14,14 @@ export function browserSupportsNativeHeic(userAgent) {
   return !!version && Number(version[1]) >= 17;
 }
 
-/** Ordinary formats pass through. HEAD probes never trigger image conversion. */
-export function imageProxyFetchOptions(target, method, userAgent = "", enableTransform = true) {
-  const needsWebp = enableTransform && method !== "HEAD" &&
-    isHeicImageUrl(target) && !browserSupportsNativeHeic(userAgent);
-  const fetchOptions = {
+/** Always forward original bytes; never enable Cloudflare cf.image. */
+export function imageProxyFetchOptions(_target, method) {
+  return {
     method: method === "HEAD" ? "HEAD" : "GET",
-    // veImageX can choose HEIC before AVIF/WebP when Accept advertises all formats.
-    // For browsers that need conversion, request only WebP so the origin's
-    // adaptive-format rule does not send an HEIC file into Cloudflare's decoder.
     headers: {
-      "Accept": needsWebp
-        ? "image/webp"
-        : "image/avif,image/webp,image/apng,image/heic,image/heif,image/jpeg,image/png,image/*;q=0.8"
+      "Accept": "image/avif,image/webp,image/apng,image/heic,image/heif,image/jpeg,image/png,image/*;q=0.8"
     },
     redirect: "manual",
     signal: AbortSignal.timeout(15000),
   };
-  if (needsWebp) fetchOptions.cf = { image: { format: "webp" } };
-  return fetchOptions;
-}
-
-/**
- * Retain path, tplv processing spec, lk3s and unknown parameters. Only signed
- * authorization values (x-expires/x-signature) and _bxg_retry are ephemeral.
- */
-export function stableImageIdentity(target) {
-  const url = target instanceof URL ? new URL(target.href) : new URL(String(target));
-  const stableEntries = [...url.searchParams.entries()]
-    .filter(([name]) => !EPHEMERAL_IMAGE_QUERY_PARAMETERS.has(name.toLowerCase()))
-    .sort(([nameA, valueA], [nameB, valueB]) => nameA.localeCompare(nameB) || valueA.localeCompare(valueB));
-  url.search = "";
-  for (const [name, value] of stableEntries) url.searchParams.append(name, value);
-  url.hash = "";
-  return url.origin + url.pathname + url.search;
-}
-
-/** Hash the stable identity into a synthetic same-origin Cache API URL. */
-export async function imageCacheKeyUrl(requestUrl, target, format = "webp") {
-  const identity = stableImageIdentity(target);
-  const material = "beixiaoguo-image-cache-v1\n" + String(format).toLowerCase() + "\n" + identity;
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(material));
-  const hash = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
-  return new URL("/__bxg-cache/images/v1/" + String(format).toLowerCase() + "/" + hash, requestUrl).href;
 }
