@@ -1,3 +1,10 @@
+## 2026-11-28 线上状态复核（0.1.18；未修改应用代码）
+
+- 重新核对维护仓库 `main` 为 `d161be8540c25364c7453236c89827882d7be5ec`，这是仅修正文档的提交；CI Run [#46116623484](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46116623484) 成功，应用版本仍为 0.1.18。
+- 生产部署 fork `main` 仍是 `cc94107d0cd0fcd4805234804775f6e3859ff665`。Cloudflare Workers and Pages Check Suite [#124755836973](https://api.github.com/repos/qmancf206/beixiaoguo-CF/check-suites/124755836973) 对这个 SHA 报告 `completed / success`；因此该提交的 Cloudflare 部署检查有成功记录。生产网站 `/api/v1/health` 的实时 JSON 本轮尚未取到，故域名实际返回的运行时版本仍待直接核验。
+- 最新失败图片 GET 的真实响应仍未取得。此前 0.1.17 的 9516 是旧的真实证据，但不能作为 0.1.18 部署后的结果；不能据此判定 Accept 协商是否生效，也不能盲目重复 HEIC 修复。本轮不改代码、测试、配置或应用版本。
+- 下一步：先核对生产 `GET /api/v1/health` 的 `version` 是否为 `0.1.18`，再提供最新失败图片 **GET** 的状态、响应体及诊断头（`Content-Type`、`X-BXG-Error-Code`、`X-BXG-Transform-Error-Code`、`X-BXG-Image-Cache`、`X-BXG-Image-Transform`、`X-BXG-Trace-ID`，必要时 `X-BXG-Debug`）；不要分享完整带签名 URL。拿到回包后先定根因，再做单假设最小修复。
+
 ## 0.1.18 — 2026-11-28
 
 ### 修正 HEIC 源站格式协商，并保留 Cloudflare 解码错误码

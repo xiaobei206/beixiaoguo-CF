@@ -1,10 +1,17 @@
 # 贝小果 Cloudflare 交接索引
 
+### 0.1.18 线上状态复核（2026-11-28 16:30，Asia/Tokyo；未修改应用代码）
+
+- **维护仓库** `xiaobei206/beixiaoguo-CF` 的 `main` 当前为 `d161be8540c25364c7453236c89827882d7be5ec`；该 SHA 只修正交接文档。对应 CI Run [#46116623484](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46116623484) 已成功。应用版本仍是 `0.1.18`。
+- **部署 fork** `qmancf206/beixiaoguo-CF` 的 `main` 为 `cc94107d0cd0fcd4805234804775f6e3859ff665`，包含 0.1.18 代码及测试。GitHub 的 Cloudflare Workers and Pages Check Suite [#124755836973](https://api.github.com/repos/qmancf206/beixiaoguo-CF/check-suites/124755836973) 对该 SHA 报告 `completed / success`，变化区间为 `bdf2a735f85ee82d81b88de8f50776b0b8f4541e → cc94107d0cd0fcd4805234804775f6e3859ff665`。这证明 Cloudflare 集成对该提交报告部署检查成功；但本轮仍未拿到生产域名的实时健康接口回包，故**尚不能用浏览器实际响应确认 `w.hiu.us.kg` 当前返回的运行时版本**。
+- **封面故障没有新证据闭环。** 仍缺少 0.1.18 部署后的最新失败图片 `GET /api/v1/images?...` 的状态、响应体与诊断头；上一份 0.1.17 的 `9516` 只说明旧请求解码 HEIC 失败，不能代替本次 GET。没有因此修改任何代码、测试、配置或版本，也没有把问题标记为已修复。
+- **接下来唯一有效动作：** 在生产网站打开 `/api/v1/health`，确认 JSON 的 `version` 是否为 `0.1.18`；然后在 DevTools → Network 中选最新失败的图片 **GET（不要用 HEAD）**，提供 HTTP 状态、响应 JSON/正文、`Content-Type`、`X-BXG-Error-Code`、`X-BXG-Transform-Error-Code`、`X-BXG-Image-Cache`、`X-BXG-Image-Transform`、`X-BXG-Trace-ID`，必要时附 `X-BXG-Debug`。不要粘贴完整签名 URL 或其中的 `x-expires`、`x-signature`。有了这份真实回包后再选择一个可证伪假设做最小修复。
+
 ## 当前排障交接（2026-11-28；新对话请先读）
 
 > **当前主线：0.1.18 已进入维护仓库和部署 fork，CI 已通过，但封面故障仍未解决。** 用户最新明确反馈：更新后图片仍然无法显示。此前真实失败 GET 返回 503 `IMAGE_TRANSFORM_UNAVAILABLE`；Worker DEBUG 显示 Cloudflare 转换服务 HTTP 422、内部错误 **9516**，即 HEIC 解码失败，不是 9422 免费额度耗尽。iPhone 13 / iOS 16 Safari 与 Chromium 都需要 WebP，Safari 17+ 才走原生 HEIC。0.1.18 已把需要转换的请求发往源站时的 `Accept` 限定为 `image/webp`，并把响应体里的 `9516` 提取到诊断头。**但用户反馈仍不行，不能认定该改动有效；下一位 GPT 必须先检查 Cloudflare 实际运行版本，再取得 0.1.18 部署后的新失败 GET 响应，按真实错误继续排查。**
 >
-> **Cloudflare 来源白名单评审结论：** Images source allowlist 适用于 `/cdn-cgi/image/` URL 转换，不适用于 Worker `fetch()` 子请求中的 `cf.image`；当前方案不需要为 `p3-reading-sign.fqnovelpic.com` 增加来源白名单，更不要开启 Any origin。0.1.18 代码基线提交 `cc94107d0cd0fcd4805234804775f6e3859ff665` 已通过 CI Run [#46115643235](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46115643235)，Windows 测试和 Pages/Workers 构建与 WASM smoke test 均成功。部署 fork `main` 已同步到该代码基线；维护仓库 `main` 另有本轮交接/规矩文档提交，具体分支 tip 必须在新会话现场核对。**GitHub fork 同步和 CI 成功不能证明 Cloudflare Worker Build 已完成，也不能证明图片已恢复。**
+> **Cloudflare 来源白名单评审结论：** Images source allowlist 适用于 `/cdn-cgi/image/` URL 转换，不适用于 Worker `fetch()` 子请求中的 `cf.image`；当前方案不需要为 `p3-reading-sign.fqnovelpic.com` 增加来源白名单，更不要开启 Any origin。0.1.18 代码基线提交 `cc94107d0cd0fcd4805234804775f6e3859ff665` 已通过 CI Run [#46115643235](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46115643235)，Windows 测试和 Pages/Workers 构建与 WASM smoke test 均成功。部署 fork `main` 已同步到该代码基线；部署 fork `main` 当前为 `cc94107d0cd0fcd4805234804775f6e3859ff665`；Cloudflare Workers and Pages Check Suite [#124755836973](https://api.github.com/repos/qmancf206/beixiaoguo-CF/check-suites/124755836973) 对该 SHA 报告 `completed / success`。维护仓库 `main` 目前为仅修改交接文档的 `d161be8540c25364c7453236c89827882d7be5ec`，对应 CI Run [#46116623484](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46116623484) 已成功。Cloudflare 集成部署检查已成功，但生产域名的实时 `/api/v1/health` 回包与 0.1.18 后最新失败图片 GET 仍未取得，不能声称实际路由已验收或封面已修复。
 
 ### 1. 已证实的故障现象
 
@@ -21,8 +28,8 @@
 
 ### 2. 仓库与代码状态
 
-- 维护仓库：`xiaobei206/beixiaoguo-CF`，以 `main` 为开发基线；0.1.18 协商代码提交 `a9340b6`，iOS 16 / Accept 断言与 9516 回归测试提交 `61e6dc2`，最新交接文档提交 `cc94107`；CI Run [#46115643235](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46115643235) 已成功。当前维护仓库 main：`cc94107d0cd0fcd4805234804775f6e3859ff665`。
-- 部署 fork：`qmancf206/beixiaoguo-CF`，main 已同步至 `cc94107d0cd0fcd4805234804775f6e3859ff665`，与维护仓库当前 main 完全一致，包含 0.1.18。连接权限仍是维护仓库 push=true、部署 fork push=false。**Cloudflare Worker Build 的最终部署状态未由本连接核验；用户表示更新后图片仍不显示。**
+- 维护仓库：`xiaobei206/beixiaoguo-CF`，以 `main` 为开发基线；0.1.18 协商代码提交 `a9340b6`，iOS 16 / Accept 断言与 9516 回归测试提交 `61e6dc2`。0.1.18 代码基线 CI Run [#46115643235](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46115643235) 成功；当前维护仓库 `main` 为 `d161be8540c25364c7453236c89827882d7be5ec`，属于文档状态校正提交，其 CI Run [#46116623484](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46116623484) 已成功。
+- 部署 fork：`qmancf206/beixiaoguo-CF` 的 `main` 为 `cc94107d0cd0fcd4805234804775f6e3859ff665`，包含 0.1.18，与维护仓库当前 `main` 的 SHA 不同仅因为维护仓库有后续文档提交。Cloudflare Workers and Pages Check Suite [#124755836973](https://api.github.com/repos/qmancf206/beixiaoguo-CF/check-suites/124755836973) 对 fork 的该 SHA 报告 `completed / success`；这是 Cloudflare 集成层的部署成功记录。**仍需用生产 `GET /api/v1/health` 直接确认 `w.hiu.us.kg` 当前返回的运行时版本，并取得 0.1.18 部署后的失败图片 GET；封面问题仍未解决。** 当前连接对部署 fork 只有 pull=true、push=false。
 - Wrangler Worker 配置：`wrangler.worker.jsonc`；Worker 名称 `beixiaoguo-cf-worker`，入口 `worker.js`。
 - `worker.js` 会把 Worker 的 `env` 原样传给 `functions/api/v1/[[path]].js`。播放逻辑读取 `context.env?.BXG_MEDIA_SECRET`；名称与调用代码一致。现有配置文件未声明同名普通变量。
 - 0.1.14 补上了直接播放分支的诊断事件 `media.secret.missing`，仅记录 bool 状态，不记录密钥值。部署提交链接：
@@ -81,7 +88,7 @@ npm.cmd test
 
 下一位 GPT 必须按顺序完成：
 
-1. 先让生产网站 DEBUG 显示版本 `0.1.18`，并核对 Cloudflare Worker Builds 对应部署 SHA 是 `cc94107d0cd0fcd4805234804775f6e3859ff665`。GitHub fork 当前已同步，但不能把同步当成部署证明。若网站 DEBUG 不是 0.1.18，先解决 Worker Build/路由/缓存版本，不要改图片代码。
+1. 已核实部署 fork `main` 为 `cc94107d0cd0fcd4805234804775f6e3859ff665`，且 Cloudflare Workers and Pages Check Suite [#124755836973](https://api.github.com/repos/qmancf206/beixiaoguo-CF/check-suites/124755836973) 对该 SHA 报告成功。接下来仍要先访问生产 `GET /api/v1/health`，直接确认返回 JSON 中 `version` 为 `0.1.18`；部署检查不能取代对当前域名路由的实时取样。若返回版本不是 0.1.18，先排查 Worker Build/路由/缓存，不要改图片代码。
 2. 在 Chrome F12 → Network → `images` 过滤器中选一条失败的 `/api/v1/images?...` **GET**（不是 HEAD），记录 HTTP Status、Response JSON、`Content-Type`、`X-BXG-Error-Code`、`X-BXG-Transform-Error-Code`、`X-BXG-Image-Cache`、`X-BXG-Image-Transform`、`X-BXG-Trace-ID`。不要分享完整签名 URL（含 `x-expires`、`x-signature`）。最好同时提供一条成功与一条失败请求用于对照。
 3. 对照解释：
    - `200 image/webp` 且 `X-BXG-Image-Transform: webp`：后端已输出可显示格式；若页面仍破图，转查浏览器缓存、前端 `<img>` URL/解码与 CSP 等，不要继续折腾转换端。
