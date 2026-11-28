@@ -1,5 +1,35 @@
 # 贝小果 Cloudflare 交接索引
 
+## 当前维护状态（2026-11-28；0.1.22）
+
+### 用户最新要求
+- 用户明确要求精简贝小果 Cloudflare 主页：移除“播放线路”“上游探测”“部署教程”入口；DEBUG 保留。
+- DEBUG 仍有保留价值：0.1.21 的 HEIC/HEIF 浏览器本地解码尚未完成 iPhone 13 / iOS 16.1 Safari 真机验收，图片与播放器也仍需要真实环境诊断。
+
+### 0.1.22 已完成
+- 删除播放线路按钮、弹窗、localStorage 状态、Alt-Svc 公告前端流程、`/api/v1/route` API、IP 校验模块 `functions/route-ip.js` 与对应单测。
+- 删除上游图片探测按钮、弹窗、前端探测流程、`/api/v1/debug/image-probe` API、探测模块 `functions/image-probe.js` 与对应单测。此前 0.1.19 的 12 组探测已证明当前签名源返回 HEIC，探测任务已完成。
+- 删除主页部署教程按钮、教程弹窗、`docs/deploy-cloudflare-cn.md`，以及 Cloudflare 版无效的设置表单和 `/api/v1/settings`、`/api/v1/preheat/run` 空壳端点。原设置表单在前端被隐藏，后端 PUT 只返回“不使用 N1 服务端缓存设置”，预热接口返回 501。
+- 同步清理前端事件绑定、CSS、静态检查和 npm test 项目；更新 README 与架构文档。版本 `VERSION`、`package.json`、前端 `APP_VERSION`、API `VERSION`、HTML 资源缓存参数及页脚统一为 0.1.22。
+- 主页保留看剧/搜索/收藏/播放/投屏等原功能；顶部只保留“添加到桌面”和 DEBUG。DEBUG 前后端日志、完整诊断包、每请求 Trace、图片 HEAD 失败记录、HEIC 本地解码阶段日志和播放器事件记录均保留。
+
+### 功能代码提交与 CI
+- 本轮功能代码最终提交 SHA：`ac8c99a8019f55a5490a336d289e2f8b1694bc9e`。
+- 清理及回归修订提交：`d955b0fe9fc19291849cfaa574ce0e82d579741c`、`fafa02c0981ee8bfd2438c2f8782b936e0943a03`、`777871668596009008ac57afaf9bb73384fdd154`、`ac8c99a8019f55a5490a336d289e2f8b1694bc9e`。
+- 最终全平台 CI [#46150983842](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46150983842) 已通过：Linux `npm test`、Pages Functions bundle/runtime smoke、Workers bundle/runtime smoke、Windows `npm test` 均成功。中间运行曾发现旧部署教程静态断言、残留探测事件绑定和旧版本断言，均已修正；以最终成功 run 为准。
+
+### 部署与真实验收状态
+- 维护仓库功能代码 main SHA：`ac8c99a8019f55a5490a336d289e2f8b1694bc9e`。
+- 部署 fork `qmancf206/beixiaoguo-CF` 最近核实仍为 `98014d46d23ca6560b6f241548c00484c3466371`，尚未包含 0.1.22。当前 GitHub 连接对部署 fork 只读；Cloudflare Worker Build 与生产 `/api/v1/health` 实际版本尚未确认。
+- 代码/CI 通过不等于线上部署完成。iPhone 13 / iOS 16.1 Safari 的 HEIC 本地解码实机验收仍待 0.1.22 部署后进行；完成前不要删除 DEBUG。
+
+### 下一步第一动作
+1. 由具备写权限的账号将维护 main 的 0.1.22 快进同步到部署 fork，等待 Cloudflare Worker Build 完成。
+2. 请求生产 `GET /api/v1/health`，确认返回版本为 `0.1.22`；再在 iPhone 13 / iOS 16.1 Safari 测主页封面、详情封面及普通 JPEG/PNG/WebP。
+3. 如图片仍失败，打开保留的 DEBUG 复制诊断包，优先看 `image.heic.client-convert.failed` / `display-failed` 的 `stage`；本轮不重新增加已完成任务的上游探测器。
+
+### 历史记录：0.1.19 上游图片探测 DEBUG 专版（2026-11-28)
+
 ### 历史记录：0.1.19 上游图片探测 DEBUG 专版（2026-11-28)
 
 - **生产真实证据：** 0.1.18 的封面 GET 返回 503 `IMAGE_TRANSFORM_UNAVAILABLE`，`X-BXG-Transform-Error-Code: 9516`，`X-BXG-Image-Cache: MISS`，`X-BXG-Image-Transform: unavailable`；trace `d8b61985-9bb0-4869-aed5-df8e2cac841b` 显示 Cloudflare 转换 HTTP 422，并明确为 HEIC 解码失败。
@@ -109,6 +139,17 @@ npm.cmd test
 | [DEVELOPMENT-LOG-CN.md](DEVELOPMENT-LOG-CN.md) | 单一累计开发日志 |
 | [VERSION](VERSION) | 当前版本 |
 
+## 当前版本
+
+**0.1.22 — 2026-11-28**
+
+- 已完成主页入口精简：移除 Alt-Svc 自选线路、上游图片格式探测、部署教程和不支持的预热/服务端缓存设置界面与空壳 API。
+- DEBUG 面板和底层诊断能力保留，包括前端/边缘日志、每请求 Trace、图片加载/HEIC 转换阶段和播放器状态。
+- 0.1.21 的受限原图代理与浏览器本地 HEIC/HEIF 转 JPEG 继续保留；Safari 17+ 走原生显示，iOS 16 Safari 与 Chromium 使用自托管 `heic-to@1.6.7`。
+- 已迁移原版 UI/PWA、openhongguo Node.js/WASM SDK、推荐/搜索/详情/分集/榜单/新剧与播放解析 API。
+- 已实现渐进式 MP4 CENC AES-CTR 边缘 Range 解密及加密媒体会话；真实上游分集端到端播放、iPhone 13 / iOS 16.1 Safari HEIC 显示仍需实机验收。
+- Pages 与 Workers 保持独立入口/配置；`worker.js` 与 `wrangler.worker.jsonc` 不与 Pages `wrangler.jsonc` 混用。
+
 ## Pages 部署参数
 
 - Build command：npm run build
@@ -153,7 +194,7 @@ npm.cmd test
 
 新 GPT 接手时，先读 `AGENTS.md`、本文件顶部“当前维护状态”和 `DEVELOPMENT-LOG-CN.md` 最新记录，再重新核实维护仓库与部署 fork SHA。
 
-- 当前维护仓库 main：`ac8c99a8019f55a5490a336d289e2f8b1694bc9e`；最终全平台 CI [#46150983842](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46150983842) 已全部通过。
+- 当前功能代码提交：`ac8c99a8019f55a5490a336d289e2f8b1694bc9e`；最终全平台 CI [#46150983842](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46150983842) 已全部通过。
 - 当前版本 0.1.22。主页没有播放线路、上游探测或部署教程入口；不要恢复这些已撤下功能，除非用户明确提出新的、可验证的需求。
 - DEBUG 必须保留：iPhone 13 / iOS 16.1 Safari 的 HEIC 本地解码真实验收尚未完成。失败时先使用现有阶段日志定位，不要重新增加旧上游探测器。
 - 部署 fork `qmancf206/beixiaoguo-CF` 最近核实为 `98014d46d23ca6560b6f241548c00484c3466371`，不含 0.1.22；Worker Build 与生产实际版本未知。当前连接对部署 fork 只读，不要声称已同步或部署。

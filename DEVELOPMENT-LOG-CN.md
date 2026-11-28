@@ -13,7 +13,7 @@
 - 保留 DEBUG 前端/边缘日志、完整诊断包、每请求 Trace、图片 HEAD 失败记录、HEIC 转换阶段以及播放器 waiting/stalled/error 状态记录。
 
 ### 测试、提交与部署边界
-- 最终维护 main SHA：`ac8c99a8019f55a5490a336d289e2f8b1694bc9e`；最终 CI [#46150983842](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46150983842) 全部通过：Linux `npm test`、Pages Functions bundle/runtime smoke、Workers bundle/runtime smoke、Windows `npm test`。
+- 最终功能代码提交 SHA：`ac8c99a8019f55a5490a336d289e2f8b1694bc9e`；最终 CI [#46150983842](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46150983842) 全部通过：Linux `npm test`、Pages Functions bundle/runtime smoke、Workers bundle/runtime smoke、Windows `npm test`。
 - 修改提交链：`d955b0fe9fc19291849cfaa574ce0e82d579741c`、`fafa02c0981ee8bfd2438c2f8782b936e0943a03`、`777871668596009008ac57afaf9bb73384fdd154`、`ac8c99a8019f55a5490a336d289e2f8b1694bc9e`。中间 CI 曾发现旧部署教程静态断言、残留探测事件绑定和旧版本断言，均已修正；以最终成功 CI 为准。
 - 部署 fork `qmancf206/beixiaoguo-CF` 最近核实仍为 `98014d46d23ca6560b6f241548c00484c3466371`，未同步 0.1.22；本次连接对该 fork 只读。Cloudflare Worker Build 与生产实际版本尚未确认。
 - iPhone 13 / iOS 16.1 Safari 的真实 HEIC 本地解码验收仍待生产部署后完成。CI 证明静态逻辑、Mock/构建和运行时烟雾测试通过，不替代真实手机显示/播放验收。
