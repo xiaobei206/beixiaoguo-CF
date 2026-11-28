@@ -28,6 +28,8 @@ assert.match(app, /type:"image\/jpeg"/);
 assert.match(app, /activeHeicConversions >= 2/);
 assert.match(app, /image\.heic\.client-convert\.success/);
 assert.match(app, /image\.heic\.client-convert\.failed/);
+assert.match(app, /function enableClientHeicFallback\(failedImage, failedSourceUrl\) \{\s*clientHeicFallbackMode = true;\s*\/\/ Convert only the image that failed\. Other visible or lazy-loaded covers\s*\/\/ fall back independently on their own error event; new ones use mode=source\.\s*startHeicGridConversion\(failedImage, failedSourceUrl\);\s*\}/);
+assert.doesNotMatch(app, /querySelectorAll\("#series-grid img\[data-original-src\], #hero img, #detail-content img"\)/, "one failed cover must not force-convert the whole page");
 assert.match(html, /app\.js\?v=0\.1\.20/);
 assert.match(html, /app\.css\?v=0\.1\.20/);
 assert.ok(!app.includes("cdn.jsdelivr.net/npm/heic-to"), "the decoder must be served from this app, not a third-party CDN");

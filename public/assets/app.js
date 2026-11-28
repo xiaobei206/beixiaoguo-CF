@@ -977,16 +977,10 @@
   }
 
   function enableClientHeicFallback(failedImage, failedSourceUrl) {
-    const alreadyEnabled = clientHeicFallbackMode;
     clientHeicFallbackMode = true;
+    // Convert only the image that failed. Other visible or lazy-loaded covers
+    // fall back independently on their own error event; new ones use mode=source.
     startHeicGridConversion(failedImage, failedSourceUrl);
-    if (alreadyEnabled) return;
-    for (const image of document.querySelectorAll("#series-grid img[data-original-src], #hero img, #detail-content img")) {
-      if (image === failedImage || image.dataset.heicFallbackAttempted === "1") continue;
-      const sourceUrl = imageSourceDetails(image);
-      if (!sourceUrl || !isAllowedHeicSource(sourceUrl) || browserSupportsNativeHeicForUi()) continue;
-      startHeicGridConversion(image, sourceUrl);
-    }
   }
 
   function handleGridImageError(event) {
