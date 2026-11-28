@@ -305,6 +305,11 @@ async function proxyCoverImageUncached(target, method, session, trace, userAgent
         throw new Error("封面重定向到了未允许的图片域名");
       }
       target = next;
+      // A redirect can change the actual image format. Only keep the WebP
+      // transformation requirement when the new target is still HEIC/HEIF.
+      transformEnabled = transformRequested &&
+        isHeicImageUrl(target) &&
+        !browserSupportsNativeHeic(userAgent);
       return true;
     } catch (error) {
       debugRecord(session, "error", "image.proxy.redirect.rejected", {
@@ -396,7 +401,7 @@ async function proxyCoverImageUncached(target, method, session, trace, userAgent
       "Cache-Control": cacheControl,
       "X-Content-Type-Options": "nosniff",
       "X-BXG-Image-Proxy": "1",
-      "X-BXG-Image-Transform": transformedToWebp ? "webp" : (nativeHeic ? "native-heic" : (transformRequested ? "fallback-original" : "none")),
+      "X-BXG-Image-Transform": transformedToWebp ? "webp" : (nativeHeic ? "native-heic" : (transformRequested ? (transformEnabled ? "fallback-original" : "redirected-format") : "none")),
     });
     for (const name of ["etag", "last-modified"]) {
       const value = response.headers.get(name);

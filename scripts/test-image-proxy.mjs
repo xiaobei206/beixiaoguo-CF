@@ -37,17 +37,22 @@ assert.equal(
 assert.notEqual(stableImageIdentity(first), stableImageIdentity(new URL(renewed.href.replace("64477e16", "64477e17"))));
 assert.match(new URL(await imageCacheKeyUrl("https://w.hiu.us.kg/api/v1/images", first)).pathname, /^\/__bxg-cache\/images\/v1\/webp\/[a-f0-9]{64}$/);
 
-// Exercise the real Pages/Workers request handler with mocked origin fetch and
-// Cache API. These tests cover the complete image route, not only helper funcs.
+// Exercise the production proxyCoverImage function extracted from the API source.
+// This is a function-level integration test with mocked origin fetch and Cache API;
+// it deliberately does not import the full onRequest router or unrelated Go/WASM SDK.
 const cacheStore = new Map();
 let cacheMatchCalls = 0;
+let failCacheMatch = false;
+let failCachePut = false;
 const fakeCache = {
   async match(request) {
     cacheMatchCalls++;
+    if (failCacheMatch) throw new Error("simulated Cache API match failure");
     const value = cacheStore.get(new URL(request.url || request).href);
     return value ? value.clone() : undefined;
   },
   async put(request, response) {
+    if (failCachePut) throw new Error("simulated Cache API put failure");
     cacheStore.set(new URL(request.url || request).href, response.clone());
   },
 };
@@ -161,6 +166,52 @@ try {
   assert.equal(serviceError.headers.get("X-BXG-Error-Code"), "IMAGE_TRANSFORM_UNAVAILABLE");
   assert.equal(calls.length, 1);
 
+  // A thrown transformation fetch and HTTP 200 with original HEIC are both failures.
+  cacheStore.clear();
+  calls = [];
+  globalThis.fetch = async (input, options) => {
+    calls.push({ url: String(input), options });
+    throw new Error("simulated upstream network reset");
+  };
+  const networkFailure = await callImage(source("abababababababababababababababab", "1801022960", "network-failure"));
+  assert.equal(networkFailure.status, 503);
+  assert.equal(networkFailure.headers.get("X-BXG-Error-Code"), "IMAGE_TRANSFORM_UNAVAILABLE");
+  assert.equal(networkFailure.headers.get("X-BXG-Transform-Error-Code"), "FETCH_FAILED");
+  assert.equal(calls.length, 1, "a failed transform must not retry the original HEIC URL");
+
+  calls = [];
+  globalThis.fetch = async (input, options) => {
+    calls.push({ url: String(input), options });
+    return new Response("raw-heic", { status: 200, headers: { "Content-Type": "image/heic" } });
+  };
+  const rawHeicSuccess = await callImage(source("acacacacacacacacacacacacacacacac", "1801022960", "raw-heic-200"));
+  assert.equal(rawHeicSuccess.status, 503);
+  assert.equal(rawHeicSuccess.headers.get("X-BXG-Error-Code"), "IMAGE_TRANSFORM_UNAVAILABLE");
+  assert.equal(rawHeicSuccess.headers.get("X-BXG-Transform-Error-Code"), "UNEXPECTED_CONTENT_TYPE");
+  assert.equal(calls.length, 1);
+
+  // Cache API lookup/write failures are non-fatal: the image still comes from origin.
+  cacheStore.clear();
+  calls = [];
+  failCacheMatch = true;
+  globalThis.fetch = async (input, options) => { calls.push({ url: String(input), options }); return webp(); };
+  const cacheMatchFailure = await callImage(source("adadadadadadadadadadadadadadadad", "1801022960", "cache-match-failure"));
+  assert.equal(cacheMatchFailure.status, 200);
+  assert.equal(cacheMatchFailure.headers.get("Content-Type"), "image/webp");
+  assert.equal(calls.length, 1);
+  failCacheMatch = false;
+
+  cacheStore.clear();
+  calls = [];
+  failCachePut = true;
+  globalThis.fetch = async (input, options) => { calls.push({ url: String(input), options }); return webp(); };
+  const cachePutFailure = await callImage(source("aeaeaeaeaeaeaeaeaeaeaeaeaeaeaeae", "1801022960", "cache-put-failure"));
+  assert.equal(cachePutFailure.status, 200);
+  assert.equal(cachePutFailure.headers.get("Content-Type"), "image/webp");
+  assert.equal(calls.length, 1);
+  assert.equal(cacheStore.size, 0, "a failed cache.put must not fail the image response");
+  failCachePut = false;
+
   // Safari 17+ receives original HEIC, while Chrome HEAD probes never transform.
   calls = [];
   globalThis.fetch = async (input, options) => {
@@ -183,7 +234,8 @@ try {
   assert.equal(calls[0].options.method, "HEAD");
   assert.equal(calls[0].options.cf, undefined);
 
-  // Allowed image redirects are revalidated and transformed; off-domain redirects are blocked.
+  // An allowed HEIC redirect to another HEIC still requests WebP; redirects to
+  // an ordinary image format must stop requiring WebP and pass the valid image through.
   calls = [];
   globalThis.fetch = async (input, options) => {
     calls.push({ url: String(input), options });
@@ -201,6 +253,24 @@ try {
   calls = [];
   globalThis.fetch = async (input, options) => {
     calls.push({ url: String(input), options });
+    if (calls.length === 1) return new Response(null, { status: 302, headers: {
+      Location: "https://p3-reading-sign.fqnovelpic.com/novel-pic/redirected.jpg?lk3s=64477e16",
+    }});
+    return new Response("fake-jpeg", { status: 200, headers: {
+      "Content-Type": "image/jpeg", "Content-Length": "9",
+    }});
+  };
+  const redirectedJpeg = await callImage(source("ababcdcdababcdcdababcdcdababcdcd", "1801022960", "redirect-jpeg"));
+  assert.equal(redirectedJpeg.status, 200);
+  assert.equal(redirectedJpeg.headers.get("Content-Type"), "image/jpeg");
+  assert.equal(redirectedJpeg.headers.get("X-BXG-Image-Transform"), "redirected-format");
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].options.cf?.image?.format, "webp");
+  assert.equal(calls[1].options.cf, undefined, "redirected JPEG must not request a WebP transform");
+
+  calls = [];
+  globalThis.fetch = async (input, options) => {
+    calls.push({ url: String(input), options });
     return new Response(null, { status: 302, headers: { Location: "https://attacker.example/image.heic" } });
   };
   const rejected = await callImage(source("11111111111111111111111111111111", "1801022960", "bad-redirect"));
@@ -213,4 +283,4 @@ try {
   else delete globalThis.caches;
 }
 
-console.log("Image proxy integration tests passed: signed URL cache hit, parallel coalescing, quota/5xx errors, Safari HEIC, HEAD, and redirect validation.");
+console.log("Image proxy function tests passed: cache hit/coalescing/failures, transform network/MIME/quota errors, Safari HEIC, HEAD, and HEIC/JPEG redirect handling.");
