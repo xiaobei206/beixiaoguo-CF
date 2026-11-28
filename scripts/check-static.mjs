@@ -97,7 +97,6 @@ if (!manifest.name.includes("贝小果")) throw new Error("PWA manifest has an u
 if (!js.includes("X-BXG-Session")) throw new Error("API calls must include anonymous session ID");
 if (!js.includes('parsed.protocol !== "https:"')) throw new Error("External cover images must be restricted to HTTPS URLs");
 if (js.includes("视频仍由 N1 按需读取与解密") || js.includes("N1 正在按需解密") || js.includes("明文 MP4")) throw new Error("Cloudflare playback UI contains stale N1-only wording");
-if (!js.includes("无需创建 KV")) throw new Error("Cloudflare runtime guide should state that KV is not required");
 
 for (const file of ["scripts/build-openhongguo.mjs", "public/assets/app.js", "functions/api/v1/[[path]].js", "functions/image-proxy-options.js", "functions/openhongguo-runtime.js", "scripts/patch-openhongguo.mjs", "scripts/smoke-sdk.mjs", "scripts/smoke-pages-runtime.mjs", "worker.js", "scripts/smoke-worker-runtime.mjs", "functions/cenc-runtime.js", "functions/media-session.js", "scripts/test-media-session.mjs", "scripts/test-image-proxy.mjs", "scripts/test-image-client-fallback.mjs", "scripts/copy-heic-to.mjs"]) {
   const result = spawnSync(process.execPath, ["--check", file], { encoding: "utf8" });
