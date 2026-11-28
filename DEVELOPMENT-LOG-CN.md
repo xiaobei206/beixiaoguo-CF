@@ -1,3 +1,23 @@
+## 0.1.21 — 2026-11-28：移除 Cloudflare 图片转码，修复 iOS 本地转码链路
+
+### 用户反馈与依据
+- 用户提供 iPhone 13 / iOS 16.1 Safari 的 0.1.20 DEBUG：片库 API 请求均为 HTTP 200，但 HEIC 封面资源报错；没有出现本地转码成功或失败事件。
+- 代码复核发现疑似 IMG 生命周期竞争：转码启动前先将 IMG 的 src 切换成临时 data GIF，错误处理可能移除该 IMG，异步转码随后因节点脱离 DOM 而退出。该解释仍需部署后真机复核，不当作已证实的唯一根因。
+
+### 实施内容
+- 删除边缘图片代理的 `cf.image` WebP 转换、转换错误处理和转换成品缓存；Workers/Pages 只代理原图字节并保留图片域名、重定向、MIME 和 10 MiB 限制。
+- HEIC/HEIF 图片从一开始就走原图代理；Safari 17+ 原生显示，iOS 16 Safari 和 Chromium 等由自托管 `heic-to@1.6.7` 本地转成 JPEG。最多两个并发解码。
+- 不再在解码前将失败 IMG 替换成临时 data 像素；转换期间隐藏原 IMG，生成 JPEG Blob 后再设置 src 并恢复可见。新增开始、失败阶段、显示失败等诊断事件。
+- 更新版本为 0.1.21，修改代理回归测试与静态检查，确保任何 UA/图片路径都不设置 `cf.image`。
+
+### 测试、提交、部署边界
+- 维护仓库代码提交：[`b9075a85c504ebcd988c05f7d4ef27d56d9dcf50`](https://github.com/xiaobei206/beixiaoguo-CF/commit/b9075a85c504ebcd988c05f7d4ef27d56d9dcf50)。
+- - 0.1.21 CI [#46136309833](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46136309833) 当前状态：`in_progress`，尚未得到最终结论；CI 未通过前不能部署。
+- 部署 fork 最近核实仍为 `daac14ffd47919e04677889ec348be7db1a544b6`，未同步 0.1.21；Worker Build 状态未知。iPhone 13 / iOS 16 Safari 真机测试待做，不能将 CI 通过等同于图片已经修复。
+- 下一步：CI 结束后按结果处理；同步 fork 并确认生产健康接口版本为 0.1.21；真机重新测试，若失败根据新日志 `stage` 字段定位。
+
+---
+
 ## 0.1.20 — 2026-11-28：浏览器本地 HEIC 解码回退
 
 ### 根据 0.1.19 真实探测报告更改方案

@@ -40,7 +40,7 @@ Cloudflare 会过滤 Worker 源站直接添加的 `Alt-Svc`，所以必须在 Cl
 
 1. CENC 支持范围：已迁移渐进式 MP4 CENC AES-CTR、senc/saiz/saio 辅助信息与任意 Range 解密；HLS/DASH、独立音轨及其他 DRM 封装不在本实现范围内。真实上游分集仍需端到端验收。
 2. 电视接力：公共边缘函数无法直接对用户家庭 LAN 执行 mDNS 或原始 TCP；需要原版 N1 或可访问 LAN 的配套助手。
-3. 图片代理与缓存：FQ Novel HEIC/HEIF 封面按浏览器能力分流，Safari 17+ 原图直出，其他浏览器请求 Cloudflare WebP 转换；普通图片格式继续原代理。WebP 成品使用稳定图片身份写入 caches.default，缓存身份保留图片路径、tplv 规格和未知内容参数（如 lk3s），只排除 x-expires、x-signature 与前端 _bxg_retry。缓存 TTL 为 30 天，同 isolate 相同转换并发合并。Cache API 是数据中心本地缓存，跨 PoP 不保证共享，也不是持久化存储；没有增加 KV/R2 强制绑定。Safari 17+ 直接返回原始 HEIC；对于需要 WebP 的浏览器，转换失败或额度耗尽时返回 IMAGE_TRANSFORM_UNAVAILABLE，不把原始 HEIC 伪装成可显示图片。
+3. 图片代理与本地解码：0.1.21 起，Workers/Pages 不调用 `cf.image`，也不缓存边缘转换后的 WebP；所有图片都经受限代理以原始 MIME/字节返回。Safari 17+ 由浏览器原生显示 HEIC/HEIF；iOS 16 Safari、Chromium 等不支持原生 HEIC 的浏览器使用自托管 `heic-to@1.6.7` 将原图在本机转成 JPEG Blob。图片代理仍限制 HTTPS `*.fqnovelpic.com`、重定向白名单、支持的 MIME 和 10 MiB 大小；本地转换最多两个并发，并记录加载/解码/显示阶段的诊断事件。签名 URL 不写入日志，也不发送到第三方转换服务。
 4. 播放兼容性：取决于浏览器对 MP4/HLS、CDN Range/CORS 和编码的支持，应在 iOS Safari、Android Chrome 和桌面浏览器分别验收。
 5. SDK 环境兼容性：Pages Functions 运行时烟雾测试验证 WASM 可初始化；Workers 入口使用独立的 Wrangler 配置及运行时烟雾测试。真实上游接口仍需单独验收。
 

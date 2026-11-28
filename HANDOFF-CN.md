@@ -1,15 +1,30 @@
 # 贝小果 Cloudflare 交接索引
 
-## 当前排障交接（2026-11-28；0.1.20 开发中）
+## 当前排障交接（2026-11-28；0.1.21 已提交）
 
-### 最新真实证据与结论
-- 用户在生产 0.1.19 的“上游探测”报告（2026-11-28T09:23:56Z）证明：原始签名 HEIC URL 的 7 组 Accept-only GET 全部 HTTP 200、MIME 为 `image/heic`、长度 42,741 字节。源站不按 Accept 改输出格式。
-- 将路径后缀改成 .webp/.avif/.jpeg 均 HTTP 403 Tengine 签名／权限拒绝；这只能证明改写后的签名不合法，不能证明格式不支持。追加 `x-tos-process` 与 `x-oss-process` 查询参数仍返回 HEIC，没有观察到这些参数生效。
-- **排障结论：** 这条已签名模板 URL 在当前配置下固定返回 HEIC；请求头协商不起作用。无法仅靠 Worker 改写路径而保留有效签名。上游签发逻辑若能签发明确 WebP/JPEG 模板 URL，是更理想的源头修复，但当前客户端没有签发密钥/接口。
-- 参考官方 VeImageX 文档：图片输出格式可在模板/签发 URL 中指定；格式自适应需要模板启用，并非任意 Accept 都自动转码。文档说明通用机制，不证明这条签名 URL 还能通过某个未测试参数变格式。
-- **0.1.20 目标：** 保留常规 Cloudflare WebP 转换作为快路径；该路径失败时，从受限同源 API 取原始 HEIC/HEIF，浏览器用自托管 `heic-to` 解码为 JPEG。签名 URL 只在当前页面/请求内存流转，不改写签名、不上报到第三方。只转换触发失败的图片，其他懒加载封面各自失败时再回退，最多并发两个转换；普通 JPEG/PNG/WebP 与 Safari 17+ 原生 HEIC 路径不变。
-- 维护仓库 0.1.20 代码提交：初版 `6d4a5f695fd26fa6b3c72d5212fbb2934931f9d1`，静态断言修订 `84def623e35106a95bd0ae4c4ce36aed6ecd170a`，按需回退性能修订 `cbadf8ac008bb6ae0c9a331f3d73219f8f01c203`。最新 CI [#46131676914](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46131676914) 已通过：Linux 静态/npm 测试、Pages Function 构建与运行时冒烟、Workers 构建与运行时冒烟，Windows `npm test` 也成功。生产仍未升级到 0.1.20，且 CI 通过不等于已在 iPhone 13 / iOS 16 Safari 实机验收。真实验收尚未完成，必须在 iPhone 13 / iOS 16 Safari 与 Chromium 实测后才能标记问题已解决。维护主线 `xiaobei206/beixiaoguo-CF`；部署 fork `qmancf206/beixiaoguo-CF` 需要独立确认同步与 Worker Build 状态。
+### 用户最新反馈与生产 DEBUG 证据
+- 用户在 iPhone 13 / iOS 16.1 Safari（iOS UA 为 `Version/16.1`）测试生产 0.1.20。主页 `/api/v1/discover` 与片库上游 API 均返回 HTTP 200；但封面反复触发 `image.resource.error` 和 `image.heic.transform.display-failed`，源图片 host 是 `p3-reading-sign.fqnovelpic.com`。
+- 报告没有 `image.heic.client-convert.success`，也没有 `image.heic.client-convert.failed`，因此该份日志能证明错误集中在图片加载/回退链路，但不能单独证明转码库本身失败。
+- 代码复核发现一个高度可疑的 IMG 生命周期竞争：v0.1.20 在开始异步本地转码前，将失败图片的 `src` 换成临时 data GIF；若新地址触发错误，委托错误处理器会移除 IMG，随后转换任务因 `!image.isConnected` 而提前退出，可能造成缺少转码结果日志。该机制是代码分析推断，仍需 iPhone 真机验收确认。
 
+### 0.1.21 当前实现
+- **完全取消 Cloudflare 图片转码**：移除图片代理中 `cf.image`、WebP 转码错误路径、成品 WebP Cache API 和转换并发合并逻辑。Workers/Pages 只在受限的 HTTPS `*.fqnovelpic.com` 代理图片原始字节；仍保留 MIME 白名单、最多 3 次重定向限制、10 MiB 大小上限及拒绝跨域重定向。
+- 浏览器遇到 HEIC/HEIF 时直接请求原图（`mode=source`）；Safari 17+ 保留原生显示，iOS 16 Safari、Chromium 等不支持原生 HEIC 的浏览器用自托管 `heic-to@1.6.7` 在本地转成 JPEG。
+- 修复 IMG 生命周期竞争：转换过程中隐藏原 IMG，但不改写其 `src`；等 JPEG Blob 转换完毕才设置 Blob URL。增加 `started`、`success`、`failed`、`display-failed` 以及阶段字段（抓取原图、读取 Blob、加载解码库、解码、显示）供后续 DEBUG 定位。
+- 自托管解码器仍不从第三方 CDN 加载；签名 URL 不写入 DEBUG/日志/本地存储；同时最多两个本地转换任务。普通 JPEG/PNG/WebP 仍走代理原字节路径。
+- 维护仓库代码提交：[`b9075a85c504ebcd988c05f7d4ef27d56d9dcf50`](https://github.com/xiaobei206/beixiaoguo-CF/commit/b9075a85c504ebcd988c05f7d4ef27d56d9dcf50)。版本号、API、前端与 HTML 缓存参数同步为 0.1.21。
+- - 0.1.21 CI [#46136309833](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46136309833) 当前状态：`in_progress`，尚未得到最终结论；CI 未通过前不能部署。
+
+### 部署与实机验收状态
+- 维护主线 `xiaobei206/beixiaoguo-CF` 当前代码 SHA：`b9075a85c504ebcd988c05f7d4ef27d56d9dcf50`。
+- 最近核实的部署 fork `qmancf206/beixiaoguo-CF` 仍为 `daac14ffd47919e04677889ec348be7db1a544b6`，未包含 0.1.21。当前 GitHub 连接对维护仓库有写权限、对部署 fork 只读；不能声称已经同步或部署。
+- 用户这份线上报告仍是 0.1.20。0.1.21 Worker Build 与真实生产部署尚未确认；iPhone 13 / iOS 16 Safari 的真实图片验收尚未完成。代码提交或 CI 通过均不等于手机问题已解决。
+
+### 下一步第一动作
+1. 确认上述 CI 的最终状态；失败时先修复并重新跑完整 CI。
+2. 由有权限的账号将维护 main 的 0.1.21 快进同步至 `qmancf206/beixiaoguo-CF`，等待 Cloudflare Worker Build/Pages deploy 完成，再以 `/api/v1/health` 确认实际运行版本为 0.1.21。
+3. 在 iPhone 13 / iOS 16 Safari 重新打开主页测试封面；预期 DEBUG 至少出现 `image.heic.client-convert.started`，成功时出现 `image.heic.client-convert.success`。如果失败，复制带 `stage` 的 `image.heic.client-convert.failed` 或 `image.heic.client-convert.display-failed`，按具体阶段继续定位。再测 Chromium、Safari 17+ 及 JPEG/PNG/WebP。
+4. 不要重跑已完成的 0.1.19 源站 Accept/URL 变体探测；该探测已证明源站当前签名 URL 直接返回 HEIC。
 
 ### 历史记录：0.1.19 上游图片探测 DEBUG 专版（2026-11-28)
 
