@@ -2330,11 +2330,6 @@
   });
   $("#cast-dialog-close").addEventListener("click", () => $("#cast-dialog").close());
   $("#debug-log-button").addEventListener("click", openDebugPanel);
-  $("#image-probe-button").addEventListener("click", openImageProbePanel);
-  $("#image-probe-dialog-close").addEventListener("click", () => $("#image-probe-dialog").close());
-  $("#image-probe-dialog").addEventListener("click", (event) => { if (event.target === $("#image-probe-dialog")) $("#image-probe-dialog").close(); });
-  $("#image-probe-run").addEventListener("click", runImageProbe);
-  $("#image-probe-copy").addEventListener("click", copyImageProbeResults);
   $("#debug-dialog-close").addEventListener("click", () => $("#debug-dialog").close());
   $("#debug-dialog").addEventListener("click", (event) => {
     if (event.target === $("#debug-dialog")) $("#debug-dialog").close();
