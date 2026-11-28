@@ -30,8 +30,6 @@
 
 ### 历史记录：0.1.19 上游图片探测 DEBUG 专版（2026-11-28)
 
-### 历史记录：0.1.19 上游图片探测 DEBUG 专版（2026-11-28)
-
 - **生产真实证据：** 0.1.18 的封面 GET 返回 503 `IMAGE_TRANSFORM_UNAVAILABLE`，`X-BXG-Transform-Error-Code: 9516`，`X-BXG-Image-Cache: MISS`，`X-BXG-Image-Transform: unavailable`；trace `d8b61985-9bb0-4869-aed5-df8e2cac841b` 显示 Cloudflare 转换 HTTP 422，并明确为 HEIC 解码失败。
 - **新版本代码：** 维护仓库提交 `31bf7de998402c1bede170e8aff0f55e8274b468`，版本 0.1.19；CI Run [#46127619086](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46127619086) 已通过（Linux build-and-smoke、Windows npm test 均成功）。部署 fork 仍为 0.1.18 的 `cc94107d0cd0fcd4805234804775f6e3859ff665`；0.1.19 尚未部署。
 - **诊断设计：** 主页增加“上游探测”按钮和独立弹窗，失败的原始 HEIC/HEIF URL 只暂存在页面内存中；后端用不带 `cf.image` 的普通 Worker GET 对同一 URL 测 7 组 Accept（WebP、AVIF、HEIC、JPEG/PNG、浏览器常见、全格式优先序、不显式设置），另测 .webp/.avif/.jpeg 路径变体和历史 `x-tos-process`/`x-oss-process` 参数。正常封面链路不变。
