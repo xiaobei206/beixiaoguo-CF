@@ -177,6 +177,18 @@ try {
   assert.equal(serviceError.headers.get("X-BXG-Error-Code"), "IMAGE_TRANSFORM_UNAVAILABLE");
   assert.equal(calls.length, 1);
 
+  calls = [];
+  globalThis.fetch = async (input, options) => {
+    calls.push({ url: String(input), options });
+    return new Response("ERROR 9516: Could not resize the image: error during decoding: Error while decoding the HEIC file.", {
+      status: 422, headers: { "Content-Type": "text/plain" },
+    });
+  };
+  const heicDecodeFailure = await callImage(source("c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1", "1801022960", "heic-9516"));
+  assert.equal(heicDecodeFailure.status, 503);
+  assert.equal(heicDecodeFailure.headers.get("X-BXG-Transform-Error-Code"), "9516");
+  assert.equal(calls.length, 1);
+
   // A thrown transformation fetch and HTTP 200 with original HEIC are both failures.
   cacheStore.clear();
   calls = [];
