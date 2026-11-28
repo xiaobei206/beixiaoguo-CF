@@ -3,7 +3,7 @@ import { createClient, SearchFilter } from "openhongguo";
 import { ensureCencRuntime } from "../../cenc-runtime.js";
 import { openMediaSession, parseByteRange, parseContentRange, safeMediaSource, sealMediaSession } from "../../media-session.js";
 
-const VERSION = "0.1.14";
+const VERSION = "0.1.15";
 const MAX_CLIENTS = 128;
 const MAX_PROFILES = 256;
 const clients = new Map();
@@ -287,12 +287,18 @@ async function proxyCoverImage(rawUrl, method, session, trace) {
   for (let redirectCount = 0; redirectCount <= 3; redirectCount++) {
     let response;
     try {
-      response = await fetch(target.href, {
+      const fetchOptions = {
         method: method === "HEAD" ? "HEAD" : "GET",
         headers: { "Accept": "image/avif,image/webp,image/apng,image/jpeg,image/png,image/*;q=0.8" },
         redirect: "manual",
         signal: AbortSignal.timeout(15000),
-      });
+      };
+      // Chromium does not render HEIC/HEIF in ordinary <img> elements.
+      // Request Cloudflare's WebP transformation only for these source formats.
+      if (/\.(?:heic|heif)$/i.test(target.pathname)) {
+        fetchOptions.cf = { image: { format: "webp" } };
+      }
+      response = await fetch(target.href, fetchOptions);
     } catch (error) {
       debugRecord(session, "error", "image.proxy.fetch.error", {
         host: target.hostname, durationMs: Date.now() - startedAt,

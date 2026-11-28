@@ -2,38 +2,28 @@
 
 ## 当前排障交接（2026-11-28；新对话请先读）
 
-> **当前仅剩主线：在实际运行的 Cloudflare Worker 上通过 Wrangler 部署 `BXG_MEDIA_SECRET`，然后以真实受保护视频播放成功作为验收。** Windows／Linux 项目测试已通过；不要重复此前的 Secret Rotate／Retry build 排查。
+> **当前主线：修复生产封面图片代理对 HEIC／HEIF 的兼容。** BXG_MEDIA_SECRET 已通过 Wrangler 写入正确的生产 Worker，用户已确认真实受保护视频可以播放；不要再次轮换 Secret，也不要从维护仓库手动 wrangler deploy 绕过部署 fork。当前图片错误已定位：源站返回 HTTP 200、Content-Type 为 image/heic，代理返回 HTTP 502 IMAGE_CONTENT_TYPE。0.1.15 在维护仓库对 HEIC/HEIF 来源请求 Cloudflare WebP 转换；需通过 CI 后同步到 qmancf206/beixiaoguo-CF，再验收线上封面。
 
 ### 1. 已证实的故障现象
 
-- 生产地址：`https://w.hiu.us.kg/`。
-- Worker：`beixiaoguo-cf-worker`，生产环境 Production；Cloudflare Domains 页面显示自定义域 `w.hiu.us.kg` 绑定到了该 Worker。
-- 用户在该 Worker 的 Settings → Variables and Secrets 中确认：类型为 `Secret`、名称为 `BXG_MEDIA_SECRET`、环境为 Production。
-- 播放接口 `GET /api/v1/play/:episodeId` 仍返回 HTTP 503 / `MEDIA_SECRET_REQUIRED`。
-- 最新用户 DEBUG 样本（2026-11-27 15:55 UTC 左右）包含：
-  ```json
-  {
-    "runtime": "Cloudflare Workers",
-    "host": "w.hiu.us.kg",
-    "secretBound": false,
-    "secretLengthValid": false
-  }
-  ```
-  这说明当前请求执行时的 `env.BXG_MEDIA_SECRET` 不是字符串；`secretLengthValid:false` 是同一检查的结果，不应误判为仅仅密钥太短。
-- 同一调试包中 SDK 初始化正常，推荐、详情、上游播放信息请求均返回 200；故障发生在本项目生成受保护媒体会话前，不是上游播放 API 或 CENC 解密阶段。
-- 上一轮让用户尝试从 Dashboard Rotate 并保存 Secret；Dashboard 没显示 Deploy 按钮，随后又尝试按部署历史菜单 Retry build，但新构建后提供的 DEBUG 仍为 `secretBound:false`。最新 Active Deployment ID 在最近一次新测试之后尚未重新核实。
-- 上次用户分享的 Deployment 页面显示 Active Deployment `3dce3a88`，commit 为 `fcea543d5762176ff52cfc4927b61c9289561643`，message 为 `fix(media): diagnose Worker media secret in direct playback (0.1.14)`，Source=Build / main / Ready，时间为 2026-11-27 14:59:23 UTC。不要假定 Retry build 一定让 secret 绑定生效。
-- 之前在聊天中生成过一串 64 位密钥并建议用户输入 Dashboard。该值曾在聊天中明文出现；最终配置时请使用本机重新生成的强随机值，通过 Wrangler 的交互提示直接输入，绝不要再把密钥放入 Git、调试包或聊天中。
+- 生产地址：https://w.hiu.us.kg/。
+- 生产 Worker：beixiaoguo-cf-worker；Cloudflare Wrangler 已登录账号 qmancf206@gmail.com，Account ID 为 1ae982074154b7e96337455ee8bacc36。
+- BXG_MEDIA_SECRET 已通过本机生成的强随机值并用 Wrangler 写入生产 Worker。密钥值没有写入 Git；不要轮换或复制到日志中。
+- 用户最新真实播放诊断已确认：GET /api/v1/play/:episodeId 返回 200，出现 edge.playback.cenc.session.ready、player.media.metadata（时长约 97.97 秒）和 player.media.playing。边缘预取 6/6 成功，3 集边缘缓存成功、0 失败，另外 3 集已排入后台缓存。
+- 当前剩余故障是封面图片。真实 Network 请求的源 URL 以 .heic 结尾；上游响应 HTTP 200，但 Content-Type 为 image/heic；当前代理用白名单拒绝它并返回 502 IMAGE_CONTENT_TYPE。Chrome 158 的普通 img 元素不支持直接显示 HEIC，因此单纯放宽 MIME 白名单并不能解决。
+- 0.1.15 修复方案：仅对源路径以 .heic 或 .heif 结尾的封面 fetch 设置 cf.image.format = webp；普通 JPEG、PNG、AVIF、WebP 继续原样代理。新增回归测试，检查 HEIC/HEIF 转 WebP 和 JPEG 不触发转换。
+- Cloudflare Images Free 当前每月包含 5,000 个不同转换组合；超出后新转换返回错误而不会对 Free 用量继续收费；Paid 计划超过包含额度后，每 1,000 个额外唯一转换计费 0.50 美元。转换只用于 HEIC／HEIF 来源，需留意生产回包是否成功及账号实际计划。
+- 图片修复目前只在维护仓库代码中，必须先通过维护仓库 CI，再同步到部署 fork 并由其 Cloudflare 部署流水线发布。不要声称图片修复已经在生产完成，直到同一 URL 返回 200、Content-Type 为 image/webp 且页面封面实际显示。
 
 ### 2. 仓库与代码状态
 
-- 维护仓库：`xiaobei206/beixiaoguo-CF`，以 `main` 为开发基线；本次 Windows 兼容性修复代码提交为 `6f9bfeed24aad316a4d78363d30b779685da3d46`，后续提交仅更新交接记录。
+- 维护仓库：`xiaobei206/beixiaoguo-CF`，以 `main` 为开发基线；本次 Windows 兼容性修复代码提交为 `6f9bfeed24aad316a4d78363d30b779685da3d46`；0.1.15 HEIC／HEIF 图片转换修复作为本轮新的维护主线变更。
 - 部署 fork：`qmancf206/beixiaoguo-CF`，main 仍为 `fcea543d5762176ff52cfc4927b61c9289561643`。维护仓库 main 已包含比部署 fork 更新的测试／文档提交；本轮**没有**修改或推送部署 fork。VPS 的本地工作副本可以从维护仓库快进更新，不需要向 fork 推送。
 - Wrangler Worker 配置：`wrangler.worker.jsonc`；Worker 名称 `beixiaoguo-cf-worker`，入口 `worker.js`。
 - `worker.js` 会把 Worker 的 `env` 原样传给 `functions/api/v1/[[path]].js`。播放逻辑读取 `context.env?.BXG_MEDIA_SECRET`；名称与调用代码一致。现有配置文件未声明同名普通变量。
 - 0.1.14 补上了直接播放分支的诊断事件 `media.secret.missing`，仅记录 bool 状态，不记录密钥值。部署提交链接：
   `https://github.com/qmancf206/beixiaoguo-CF/commit/fcea543d5762176ff52cfc4927b61c9289561643`
-- 维护仓库当前对部署 fork 没有写权限；若需同步文档/代码改动，先推送到维护仓库，再由用户 Sync fork。单纯写交接记录不应更改业务代码。
+- GitHub 连接对维护仓库有写权限，对部署 fork 仅有只读权限；代码先提交到维护 main，CI 通过后由用户在 qmancf206 仓库执行 Sync fork。
 
 ### 3. 用户 Windows VPS 环境（已实测）
 
@@ -53,9 +43,9 @@
 - 用户已提供 Windows VPS 首次 `npm.cmd test` 失败日志。已定位并修复：Windows 文件权限测试错误地断言 POSIX `0600`；生成文件比较没有归一化 CRLF/LF；POSIX Shell 假播放器测试不能在 Windows 执行；`scripts/patch-openhongguo.mjs` 对 SDK 文件的精确字符串匹配未处理 CRLF。
 - 修复已在用户自有 `xiaobei206/openhongguo` 的 main（SDK commit `dc453a4691f2d7e29b4c07c3385fab0bf00016e1`）与维护仓库 `xiaobei206/beixiaoguo-CF` 的 main（`6f9bfeed24aad316a4d78363d30b779685da3d46`）。Windows 上只跳过依赖 POSIX Shell 的模拟子进程测试；同一测试仍在 Linux CI 完整执行。其余 Go 单测、CENC 测试、WASM 构建和项目 smoke tests 均保留。
 - GitHub Actions Run #162（`https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46043726448`）已成功：`windows-latest` 的 `npm test` 通过；Ubuntu 的 `npm test`、Pages Functions 构建与 WASM smoke test、Workers 构建与 WASM smoke test 全部通过。
-- 这证明修复后的项目在 GitHub Windows Runner 和 Linux Runner 上通过；**用户自己的 Windows VPS 尚未在更新到维护仓库 main 后重新执行**。本轮没有远程登录 VPS，也没有部署或轮换生产 Secret。
+- GitHub Actions 的 Windows／Linux CI #162 已通过；用户的 Windows VPS 在更新到维护仓库 67be601 后也已完整执行 npm.cmd test 并全部通过。随后生产 BXG_MEDIA_SECRET 已由 Wrangler 配置，真实受保护视频已开始播放；0.1.15 图片转换修复需在本次新增 CI 结果出来后再同步部署 fork。
 
-### 4. Windows VPS 下一条命令
+### 4. Windows VPS 图片修复验证（需要在本机重跑时）
 
 在 PowerShell 中进入 VPS 的本地工作副本。先确认没有未提交改动，再从维护仓库 `main` 快进更新本地目录。此操作**只更新 VPS 本地工作副本，不会推送或同步 `qmancf206` 部署 fork**：
 
@@ -81,14 +71,13 @@ npm.cmd test
 
 维护仓库 main 的 Windows 与 Linux CI 均已通过。VPS 本地快进到维护仓库 main 后，重新执行一次 `npm.cmd test`，确认用户机器也通过。不要升级 npm（10.9.9 足够）、重装 Node/Go/Git、重新克隆或把整份长日志复制出来；若失败，只需提供最后一个真实错误及其前后约 30 行。
 
-### 5. 测试通过后的部署计划
+### 5. 0.1.15 图片修复的生产发布计划
 
-1. 先确认本地项目配置的 Worker 名为 `beixiaoguo-cf-worker`，并以 `npx.cmd wrangler whoami` 确认 Cloudflare 登录账号正确。
-2. 可先尝试 `npx.cmd wrangler login` 使用浏览器授权；若不可用，再为正确账号创建最小权限 API Token，且不要在聊天里贴 Token。
-3. 不要把 Secret 放在源码、`.env`、命令行参数、GitHub 或日志里。建议在本机 PowerShell 用 .NET 的 `RandomNumberGenerator` 生成 32 bytes / 64 hex 字符的新值，直接在 `npx.cmd wrangler secret put BXG_MEDIA_SECRET --config wrangler.worker.jsonc` 的交互提示中粘贴；该命令会触发 Worker 新版本部署。先确认账号、Worker 名称和当前部署 fork，然后再执行，避免误部署到其它 Worker。
-4. 观察命令是否成功，并在 Cloudflare Deployments 确认新版本进入 Active Deployment。
-5. 在 `https://w.hiu.us.kg/` 刷新并重新播放；DEBUG 必须显示 `secretBound:true` 与 `secretLengthValid:true`，并且实际视频可以播放。仅仅显示部署 Ready 不算验收。
-6. 如果 Wrangler 更新后还是 `secretBound:false`，停止再次轮换 Secret。改查部署流水线是否覆盖 bindings、Cloudflare Build/Production service 关联以及实际生效版本；记录新的 Active deployment ID 和 `X-BXG-Trace-ID`，不要暴露密钥。
+1. BXG_MEDIA_SECRET 已配置成功，不要再次执行 wrangler secret put，也不要重新部署仅为修复图片。
+2. 当前维护仓库 xiaobei206/beixiaoguo-CF 的 main 是开发基线；部署 fork qmancf206/beixiaoguo-CF 仍负责生产 Git 自动部署。维护仓库有写权限，但当前 GitHub 连接对部署 fork 是只读权限；本轮不直接向 fork 写入。
+3. 等 GitHub Actions 对 0.1.15 图片代理回归测试和 Windows／Linux CI 全部通过后，在 GitHub 的 qmancf206/beixiaoguo-CF 页面用 Sync fork → Update branch 将维护仓库主线快进同步到部署 fork；不要从维护仓库本地执行 wrangler deploy。
+4. 等部署 fork 的 Cloudflare Worker Builds 部署完成后，重新请求之前失败的 HEIC 图片 URL：预期 HTTP 200、Content-Type image/webp，前端封面实际显示。
+5. 再检查普通 JPEG／WebP 封面仍正常。如果转换失败，收集新的 HTTP 状态、Content-Type、X-BXG-Error-Code、X-BXG-Trace-ID，不要包含完整签名 URL。
 
 ### 6. 操作安全
 
@@ -106,7 +95,7 @@ npm.cmd test
 
 ## 当前版本
 
-**0.1.14 — 2026-11-27**
+**0.1.15 — 2026-11-28**
 
 - 已迁移原版 UI/PWA 资源。
 - 已接入 openhongguo Node.js/WASM SDK；0.1.2 采用预编译 `WebAssembly.Module`。CI 可验证 Pages 和 Workers 本地运行时 SDK 初始化；运行时烟雾测试不代表真实上游接口、受保护视频流或电视接力已验收。
@@ -119,6 +108,7 @@ npm.cmd test
 - 0.1.6 对 `*.fqnovelpic.com` 封面启用 HTTPS 白名单图片代理，浏览器同源加载；仍需真实 CDN 请求确认上游未拒绝 Cloudflare 出口。
 - 0.1.11 增加双层短剧预读：CF 侧最多预解析后续 6 集的播放地址／加密会话，浏览器侧最多预载后续 3 集；浏览器实际下载量仍由浏览器策略决定，CF 不会一次性缓存六集完整视频。
 - 0.1.12 增加真实 CF 媒体预热：最多 6 集受保护 MP4 在 CF 侧完整解密缓存（单集 ≤32 MiB）；前 3 集先缓存，后 3 集后台缓存；浏览器仍预载 3 集，Range 请求可命中缓存。
+- 0.1.15 修复 HEIC／HEIF 封面：在 Cloudflare Worker 对这两种源文件请求 WebP 转换，其他图片格式维持原有代理；新增回归测试。代码先在 xiaobei206/beixiaoguo-CF 维护仓库验证，再同步到 qmancf206 部署 fork，真实线上封面验收仍待完成。
 - 0.1.14 修复 `/api/v1/play/:episodeId` 在 `MEDIA_SECRET_REQUIRED` 时未写入 `media.secret.missing` 诊断的遗漏；补充 `secretBound` 和 `secretLengthValid` 两个布尔值，不记录密钥本身。先看新诊断再决定是否重建 Secret。
 - 0.1.13 增加浏览器本地自选 CF 反代 IP 管理器，支持 IPv4／IPv6，只填写 IP、固定 443，列表和选择保存在本机。选择时通过一次 `/api/v1/route?alt_ip=...` 同源请求提交 IP，Worker 校验地址后经内部响应头交给 Cloudflare Zone 响应头规则，以动态 Alt-Svc 公告备用入口；随后删除内部头，不写 Cookie，也不依赖 Pro 专属规则字段；新增 Alt-Used 诊断。真正切换必须绑定自有橙云域名并配置四条 Response Header Transform Rules；workers.dev／pages.dev 默认域名上仅保存 IP，不会切换。
 - 0.1.13 对 MEDIA_SECRET_REQUIRED 增加安全运行时诊断 `media.secret.missing`，记录当前运行时以及 Secret 绑定／长度状态，不记录 Secret 值。仍需以实际 Worker 请求 DEBUG 为准，不能据此认定 Cloudflare 生产环境 Secret 已成功读取。

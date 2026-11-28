@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 const required = [
   "public/index.html", "public/assets/app.js", "public/assets/app.css",
   "public/assets/icon-192.png", "public/assets/icon-512.png",
-  "public/manifest.webmanifest", "public/_routes.json", "functions/api/v1/[[path]].js", "functions/openhongguo-runtime.js", "scripts/patch-openhongguo.mjs", "scripts/build-openhongguo.mjs", "wrangler.jsonc", "wrangler.worker.jsonc", "worker.js", "scripts/smoke-worker-runtime.mjs", "scripts/test-media-session.mjs", "scripts/test-route-ip.mjs", "functions/route-ip.js", "functions/cenc-runtime.js", "functions/media-session.js", "edge-cenc/go.mod", "edge-cenc/cenc/layout.go", "edge-cenc/cenc/layout_test.go", "edge-cenc/wasm/main.go", "docs/deploy-cloudflare-cn.md", "VERSION"
+  "public/manifest.webmanifest", "public/_routes.json", "functions/api/v1/[[path]].js", "functions/openhongguo-runtime.js", "scripts/patch-openhongguo.mjs", "scripts/build-openhongguo.mjs", "wrangler.jsonc", "wrangler.worker.jsonc", "worker.js", "scripts/smoke-worker-runtime.mjs", "scripts/test-media-session.mjs", "scripts/test-image-proxy.mjs", "scripts/test-route-ip.mjs", "functions/route-ip.js", "functions/cenc-runtime.js", "functions/media-session.js", "edge-cenc/go.mod", "edge-cenc/cenc/layout.go", "edge-cenc/cenc/layout_test.go", "edge-cenc/wasm/main.go", "docs/deploy-cloudflare-cn.md", "VERSION"
 ];
 for (const file of required) await access(file);
 
@@ -72,6 +72,7 @@ if (!js.includes("DEBUG_STORAGE_KEY") || !js.includes("api.response.error") || !
 if (!worker.includes('parts[0] === "debug" && parts[1] === "logs"') || !worker.includes('debugRecord(session, "debug", "upstream.request"') || !worker.includes('runtimeDiagnostics()')) throw new Error("Edge DEBUG endpoint must expose session-scoped request and WASM diagnostics");
 if (!worker.includes('response.headers.set("X-BXG-Trace-ID", traceId)') || !worker.includes('response.headers.set("X-BXG-Debug", value)')) throw new Error("Every API response must carry its own edge trace, independent of isolate memory");
 if (!worker.includes('async function proxyCoverImage') || !worker.includes('host.endsWith(".fqnovelpic.com")') || !worker.includes('parts[0] === "images"')) throw new Error("FQ Novel poster images must use the restricted Cloudflare proxy");
+if (!worker.includes('(?:heic|heif)') || !worker.includes('fetchOptions.cf = { image: { format: "webp" } };')) throw new Error("HEIC/HEIF cover requests must use a WebP transformation for Chromium compatibility.");
 if (!js.includes('proxy.searchParams.set("url", parsed.href)') || !js.includes('captureEdgeTrace(response)')) throw new Error("Frontend must proxy FQ Novel posters and collect per-request edge traces");
 if (!worker.includes('url.searchParams.get("sdk") === "probe" && context.env?.BXG_SMOKE_TEST === "1"')) throw new Error("The network-free WASM probe must remain gated to local smoke tests");
 if (!patcher.includes("__BXG_OPENHONGGUO_GO") || !patcher.includes("Go runtime recovery") || !patcher.includes("Go runtime exit monitor")) throw new Error("Go/WASM runtime recovery and exit monitoring patch is missing");
@@ -89,7 +90,7 @@ if (!js.includes('parsed.protocol !== "https:"')) throw new Error("External cove
 if (js.includes("视频仍由 N1 按需读取与解密") || js.includes("N1 正在按需解密") || js.includes("明文 MP4")) throw new Error("Cloudflare playback UI contains stale N1-only wording");
 if (!js.includes("无需创建 KV")) throw new Error("Cloudflare runtime guide should state that KV is not required");
 
-for (const file of ["scripts/build-openhongguo.mjs", "public/assets/app.js", "functions/api/v1/[[path]].js", "functions/openhongguo-runtime.js", "scripts/patch-openhongguo.mjs", "scripts/smoke-sdk.mjs", "scripts/smoke-pages-runtime.mjs", "worker.js", "scripts/smoke-worker-runtime.mjs", "functions/cenc-runtime.js", "functions/media-session.js", "scripts/test-media-session.mjs"]) {
+for (const file of ["scripts/build-openhongguo.mjs", "public/assets/app.js", "functions/api/v1/[[path]].js", "functions/openhongguo-runtime.js", "scripts/patch-openhongguo.mjs", "scripts/smoke-sdk.mjs", "scripts/smoke-pages-runtime.mjs", "worker.js", "scripts/smoke-worker-runtime.mjs", "functions/cenc-runtime.js", "functions/media-session.js", "scripts/test-media-session.mjs", "scripts/test-image-proxy.mjs"]) {
   const result = spawnSync(process.execPath, ["--check", file], { encoding: "utf8" });
   if (result.status !== 0) throw new Error("Syntax check failed: " + file + "\n" + result.stderr);
 }

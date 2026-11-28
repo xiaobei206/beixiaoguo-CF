@@ -21,7 +21,7 @@
   let settingsRefreshTimer = 0;
   let deferredInstallPrompt = null;
   const DEBUG_STORAGE_KEY = "beixiaoguo.cf.debug-log";
-  const APP_VERSION = "0.1.14";
+  const APP_VERSION = "0.1.15";
   const EDGE_PREFETCH_COUNT = 6;
   const BROWSER_PRELOAD_COUNT = 3;
   const MAX_DEBUG_ENTRIES = 180;

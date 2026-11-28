@@ -1,5 +1,14 @@
 # 贝小果 Cloudflare 开发日志
 
+## 0.1.15 — 2026-11-28
+
+### 修复 HEIC／HEIF 封面图片在 Chromium 中破图
+- 生产 Network 日志已定位根因：FQ Novel 图片源返回 HTTP 200、Content-Type 为 image/heic，但 Cloudflare 图片代理只接受 AVIF／WebP／JPEG／PNG／GIF，因此代理自己返回 HTTP 502 IMAGE_CONTENT_TYPE。
+- 不能只把 image/heic 加入白名单，因为 Chrome／Chromium 的普通 img 元素当前不支持直接显示 HEIC／HEIF。代理现在仅在源路径后缀为 .heic 或 .heif 时请求 Cloudflare Image Transformations 输出 WebP；其他受支持格式保持原样转发。
+- 新增 scripts/test-image-proxy.mjs 回归测试：HEIC／HEIF 必须请求 WebP 转换并返回 image/webp；JPEG 不应触发转换。CI 的静态检查和 npm test 都纳入该测试。
+- 转换使用 Cloudflare Images 的远程图片转换能力。Images Free 每月含 5,000 个不同转换组合；Free 超额的新转换会失败且不收费，Paid 超过包含额度后每 1,000 个额外唯一转换为 0.50 美元。这里只对 HEIC／HEIF 调用转换，生产验收还需确认服务确实返回 WebP。
+- 本次修复仅提交到维护仓库；需等待 CI 通过并同步到 qmancf206/beixiaoguo-CF 后，才能验证生产封面恢复。生产视频 Secret 已配置，视频播放不再是当前故障主线。
+
 ## 0.1.14 — 2026-11-27
 
 ### 修复受保护播放 Secret 诊断遗漏
