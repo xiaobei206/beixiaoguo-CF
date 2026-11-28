@@ -2,9 +2,9 @@
 
 ## 当前排障交接（2026-11-28；新对话请先读）
 
-> **当前主线：完善 HEIC／HEIF 封面转换和缓存。** 0.1.15 首次加入 HEIC 转 WebP，但只是按扩展名无差别转换，没有稳定缓存，也会对 Safari 和 HEAD 请求触发转换。0.1.16 在维护仓库 main 增加 Safari 17+ 原生 HEIC 直出、非 Safari 的 HEIC／HEIF WebP 转换、稳定图片身份与 Cloudflare Cache API 30 天缓存、同 isolate 并发合并、转换失败原图回退。签名 URL 的 x-expires／x-signature 不参与缓存身份；lk3s、图片路径及 tplv 规格保留；外层 _bxg_retry 不影响缓存键。普通图片仍走原代理。
+> **当前主线：修正 HEIC 转换失败行为并增强图片代理集成测试。** 0.1.16 已有 Safari 17+ 原生 HEIC 直出、Chrome 等浏览器 WebP 转换、稳定图片身份、Cache API 缓存及同 isolate 并发合并。0.1.17 不再把转换失败后的原始 HEIC 以 HTTP 200 返回给 Chrome：转换服务异常、非 WebP 输出或 9422 额度错误均返回 HTTP 503 / IMAGE_TRANSFORM_UNAVAILABLE；前端不再通过 _bxg_retry 重复请求失败的 HEIC 转换，而是显示统一占位图。Cache API 转换成品仅保留 30 天 max-age，不再声明不支持的 stale-while-revalidate。
 >
-> **重要边界：** Cache API 只在单个 Cloudflare 数据中心本地生效，可能因 PoP 变化或淘汰再次转换；它不等价于 R2/KV 全局持久缓存。当前没有新增必须配置的绑定。CI 通过后再同步到部署 fork qmancf206/beixiaoguo-CF，不要从维护仓库手动部署生产 Worker。生产封面验收仍需检查 Content-Type: image/webp、X-BXG-Image-Transform 和 X-BXG-Image-Cache。
+> **Cloudflare 来源白名单评审结论：** 官方文档说明 Images source allowlist 只作用于 /cdn-cgi/image/ URL 转换，不作用于 Worker fetch() 子请求上的 cf.image。当前项目用的是后一种方式，因此不需要在 Dashboard 为 p3-reading-sign.fqnovelpic.com 增加 Images source allowlist；不要为此开启 Any origin。Cache API 只在单个 Cloudflare 数据中心本地生效，可能因 PoP 变化或缓存淘汰再次转换。0.1.16 完整 CI 已通过；0.1.17 需完成新 CI 后再同步部署 fork，当前未发布生产。
 
 ### 1. 已证实的故障现象
 
@@ -13,13 +13,13 @@
 - BXG_MEDIA_SECRET 已通过本机生成的强随机值并用 Wrangler 写入生产 Worker。密钥值没有写入 Git；不要轮换或复制到日志中。
 - 用户最新真实播放诊断已确认：GET /api/v1/play/:episodeId 返回 200，出现 edge.playback.cenc.session.ready、player.media.metadata（时长约 97.97 秒）和 player.media.playing。边缘预取 6/6 成功，3 集边缘缓存成功、0 失败，另外 3 集已排入后台缓存。
 - 当前剩余故障是封面图片。真实 Network 请求的源 URL 以 .heic 结尾；上游响应 HTTP 200，但 Content-Type 为 image/heic；当前代理用白名单拒绝它并返回 502 IMAGE_CONTENT_TYPE。Chrome 158 的普通 img 元素不支持直接显示 HEIC，因此单纯放宽 MIME 白名单并不能解决。
-- 0.1.15 的初始方案仅按 .heic/.heif 后缀直接转换，缺少 Safari 分流和稳定缓存；0.1.16 已补上这些能力。新增回归测试，检查 HEIC/HEIF 转 WebP 和 JPEG 不触发转换。
+- 0.1.15 的初始方案仅按 .heic/.heif 后缀直接转换；0.1.16 加入 Safari 分流、稳定缓存、签名参数规范化及同 isolate 并发合并；0.1.17 再修正转换失败处理并对真实 onRequest 路由做集成测试。
 - Cloudflare Images Free 当前每月包含 5,000 个不同转换组合；超出后新转换返回错误而不会对 Free 用量继续收费；Paid 计划超过包含额度后，每 1,000 个额外唯一转换计费 0.50 美元。转换只用于 HEIC／HEIF 来源，需留意生产回包是否成功及账号实际计划。
-- 0.1.16 当前提交仍先只进入维护仓库 main；必须先通过维护仓库 CI，再同步到部署 fork 并由其 Cloudflare 部署流水线发布。不要声称图片修复已经在生产完成，直到同一 URL 返回 200、Content-Type 为 image/webp 且页面封面实际显示。
+- 0.1.16 提交 abd75cff 的 Linux/Windows/Pages/Workers CI 已全部通过；0.1.17 尚待 CI。维护仓库 main 尚未同步到生产部署 fork，不能声称线上修复已生效。
 
 ### 2. 仓库与代码状态
 
-- 维护仓库：`xiaobei206/beixiaoguo-CF`，以 `main` 为开发基线；本次 Windows 兼容性修复代码提交为 `6f9bfeed24aad316a4d78363d30b779685da3d46`；0.1.15 HEIC／HEIF 图片转换修复作为本轮新的维护主线变更。
+- 维护仓库：`xiaobei206/beixiaoguo-CF`，以 `main` 为开发基线；本次 Windows 兼容性修复代码提交为 `6f9bfeed24aad316a4d78363d30b779685da3d46`；HEIC 图片缓存首个提交为 abd75cff2796a2eb00497f7a98c33d8ea01e08cf（0.1.16）；0.1.17 修正提交与 CI 结果待更新。
 - 部署 fork：`qmancf206/beixiaoguo-CF`，main 仍为 `fcea543d5762176ff52cfc4927b61c9289561643`。维护仓库 main 已包含比部署 fork 更新的测试／文档提交；本轮**没有**修改或推送部署 fork。VPS 的本地工作副本可以从维护仓库快进更新，不需要向 fork 推送。
 - Wrangler Worker 配置：`wrangler.worker.jsonc`；Worker 名称 `beixiaoguo-cf-worker`，入口 `worker.js`。
 - `worker.js` 会把 Worker 的 `env` 原样传给 `functions/api/v1/[[path]].js`。播放逻辑读取 `context.env?.BXG_MEDIA_SECRET`；名称与调用代码一致。现有配置文件未声明同名普通变量。
@@ -45,7 +45,7 @@
 - 用户已提供 Windows VPS 首次 `npm.cmd test` 失败日志。已定位并修复：Windows 文件权限测试错误地断言 POSIX `0600`；生成文件比较没有归一化 CRLF/LF；POSIX Shell 假播放器测试不能在 Windows 执行；`scripts/patch-openhongguo.mjs` 对 SDK 文件的精确字符串匹配未处理 CRLF。
 - 修复已在用户自有 `xiaobei206/openhongguo` 的 main（SDK commit `dc453a4691f2d7e29b4c07c3385fab0bf00016e1`）与维护仓库 `xiaobei206/beixiaoguo-CF` 的 main（`6f9bfeed24aad316a4d78363d30b779685da3d46`）。Windows 上只跳过依赖 POSIX Shell 的模拟子进程测试；同一测试仍在 Linux CI 完整执行。其余 Go 单测、CENC 测试、WASM 构建和项目 smoke tests 均保留。
 - GitHub Actions Run #162（`https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46043726448`）已成功：`windows-latest` 的 `npm test` 通过；Ubuntu 的 `npm test`、Pages Functions 构建与 WASM smoke test、Workers 构建与 WASM smoke test 全部通过。
-- GitHub Actions 的 Windows／Linux CI #162 已通过；用户的 Windows VPS 在更新到维护仓库 67be601 后也已完整执行 npm.cmd test 并全部通过。随后生产 BXG_MEDIA_SECRET 已由 Wrangler 配置，真实受保护视频已开始播放；0.1.15 图片转换修复需在本次新增 CI 结果出来后再同步部署 fork。
+- GitHub Actions 的 Windows／Linux CI #162 已通过；用户的 Windows VPS 在更新到维护仓库 67be601 后也已完整执行 npm.cmd test 并全部通过。随后生产 BXG_MEDIA_SECRET 已由 Wrangler 配置，真实受保护视频已开始播放；0.1.16 完整 CI Run #46108337627 已通过 Windows npm test、Linux npm test、Pages Functions 构建与 WASM smoke test、Workers 构建与 WASM smoke test；0.1.17 仍待 CI 后同步部署 fork。
 
 ### 4. Windows VPS 图片修复验证（需要在本机重跑时）
 
@@ -73,12 +73,12 @@ npm.cmd test
 
 维护仓库 main 的 Windows 与 Linux CI 均已通过。VPS 本地快进到维护仓库 main 后，重新执行一次 `npm.cmd test`，确认用户机器也通过。不要升级 npm（10.9.9 足够）、重装 Node/Go/Git、重新克隆或把整份长日志复制出来；若失败，只需提供最后一个真实错误及其前后约 30 行。
 
-### 5. 0.1.15 图片修复的生产发布计划
+### 5. 0.1.17 图片修复的生产发布计划
 
 1. BXG_MEDIA_SECRET 已配置成功，不要再次执行 wrangler secret put，也不要重新部署仅为修复图片。
 2. 当前维护仓库 xiaobei206/beixiaoguo-CF 的 main 是开发基线；部署 fork qmancf206/beixiaoguo-CF 仍负责生产 Git 自动部署。维护仓库有写权限，但当前 GitHub 连接对部署 fork 是只读权限；本轮不直接向 fork 写入。
-3. 等 GitHub Actions 对 0.1.15 图片代理回归测试和 Windows／Linux CI 全部通过后，在 GitHub 的 qmancf206/beixiaoguo-CF 页面用 Sync fork → Update branch 将维护仓库主线快进同步到部署 fork；不要从维护仓库本地执行 wrangler deploy。
-4. 等部署 fork 的 Cloudflare Worker Builds 部署完成后，重新请求之前失败的 HEIC 图片 URL：预期 HTTP 200、Content-Type image/webp，前端封面实际显示。
+3. 等 GitHub Actions 对 0.1.17 的 Windows／Linux 集成测试和 Pages／Workers 构建全部通过后，在 GitHub 的 qmancf206/beixiaoguo-CF 页面用 Sync fork → Update branch 将维护仓库主线快进同步到部署 fork；不要从维护仓库本地执行 wrangler deploy。
+4. 等部署 fork 的 Cloudflare Worker Builds 部署完成后，重新请求之前失败的 HEIC 图片 URL：Chrome 请求 HEIC 应返回 HTTP 200、Content-Type image/webp；Safari 17+ 应返回原始 image/heic。
 5. 再检查普通 JPEG／WebP 封面仍正常。如果转换失败，收集新的 HTTP 状态、Content-Type、X-BXG-Error-Code、X-BXG-Trace-ID，不要包含完整签名 URL。
 
 ### 6. 操作安全
@@ -97,7 +97,7 @@ npm.cmd test
 
 ## 当前版本
 
-**0.1.15 — 2026-11-28**
+**0.1.17 — 2026-11-28**
 
 - 已迁移原版 UI/PWA 资源。
 - 已接入 openhongguo Node.js/WASM SDK；0.1.2 采用预编译 `WebAssembly.Module`。CI 可验证 Pages 和 Workers 本地运行时 SDK 初始化；运行时烟雾测试不代表真实上游接口、受保护视频流或电视接力已验收。
@@ -110,10 +110,10 @@ npm.cmd test
 - 0.1.6 对 `*.fqnovelpic.com` 封面启用 HTTPS 白名单图片代理，浏览器同源加载；仍需真实 CDN 请求确认上游未拒绝 Cloudflare 出口。
 - 0.1.11 增加双层短剧预读：CF 侧最多预解析后续 6 集的播放地址／加密会话，浏览器侧最多预载后续 3 集；浏览器实际下载量仍由浏览器策略决定，CF 不会一次性缓存六集完整视频。
 - 0.1.12 增加真实 CF 媒体预热：最多 6 集受保护 MP4 在 CF 侧完整解密缓存（单集 ≤32 MiB）；前 3 集先缓存，后 3 集后台缓存；浏览器仍预载 3 集，Range 请求可命中缓存。
-- 0.1.15 修复 HEIC／HEIF 封面：在 Cloudflare Worker 对这两种源文件请求 WebP 转换，其他图片格式维持原有代理；新增回归测试。代码先在 xiaobei206/beixiaoguo-CF 维护仓库验证，再同步到 qmancf206 部署 fork，真实线上封面验收仍待完成。
-- 0.1.14 修复 `/api/v1/play/:episodeId` 在 `MEDIA_SECRET_REQUIRED` 时未写入 `media.secret.missing` 诊断的遗漏；补充 `secretBound` 和 `secretLengthValid` 两个布尔值，不记录密钥本身。先看新诊断再决定是否重建 Secret。
+- 0.1.17 修正 HEIC 转换失败语义：额度 9422、5xx 或非 WebP 输出时返回明确 503，不向 Chrome 返回原始 HEIC 作为假成功；前端停止失败 HEIC 的自动重试并显示占位图；去掉 Cache API 不支持的 stale-while-revalidate；新增实际 onRequest 图片代理集成测试。
+- 0.1.16 完善 HEIC/HEIF 图片流程：Safari 17+ 原图直出，其他浏览器请求 WebP 转换；签名 URL 规范化后使用 Cache API 30 天缓存，重试参数不影响缓存身份，并合并同 isolate 并发转换。
 - 0.1.13 增加浏览器本地自选 CF 反代 IP 管理器，支持 IPv4／IPv6，只填写 IP、固定 443，列表和选择保存在本机。选择时通过一次 `/api/v1/route?alt_ip=...` 同源请求提交 IP，Worker 校验地址后经内部响应头交给 Cloudflare Zone 响应头规则，以动态 Alt-Svc 公告备用入口；随后删除内部头，不写 Cookie，也不依赖 Pro 专属规则字段；新增 Alt-Used 诊断。真正切换必须绑定自有橙云域名并配置四条 Response Header Transform Rules；workers.dev／pages.dev 默认域名上仅保存 IP，不会切换。
-- 0.1.13 对 MEDIA_SECRET_REQUIRED 增加安全运行时诊断 `media.secret.missing`，记录当前运行时以及 Secret 绑定／长度状态，不记录 Secret 值。仍需以实际 Worker 请求 DEBUG 为准，不能据此认定 Cloudflare 生产环境 Secret 已成功读取。
+- 0.1.14 补充 MEDIA_SECRET_REQUIRED 的安全运行时诊断 media.secret.missing，记录 Secret 绑定和长度状态，不记录 Secret 值。
 - 原版 beixiaoguo-web 不受本仓库修改影响。
 
 ## Pages 部署参数

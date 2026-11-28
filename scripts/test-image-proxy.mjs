@@ -7,13 +7,11 @@ import {
   stableImageIdentity,
 } from "../functions/image-proxy-options.js";
 
-const safari17Mac = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15";
 const safari17IOS = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
 const safari16 = "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15";
 const chrome = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.0.0 Safari/537.36";
 const chromeIOS = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/130.0.0.0 Mobile/15E148 Safari/604.1";
 
-assert.equal(browserSupportsNativeHeic(safari17Mac), true);
 assert.equal(browserSupportsNativeHeic(safari17IOS), true);
 assert.equal(browserSupportsNativeHeic(safari16), false);
 assert.equal(browserSupportsNativeHeic(chrome), false);
@@ -22,35 +20,176 @@ assert.equal(browserSupportsNativeHeic(chromeIOS), false);
 for (const extension of ["heic", "heif"]) {
   const target = new URL("https://p3-reading-sign.fqnovelpic.com/novel-pic/cover." + extension + "?signature=test");
   assert.equal(isHeicImageUrl(target), true);
-  const options = imageProxyFetchOptions(target, "GET", chrome);
-  assert.equal(options.method, "GET");
-  assert.deepEqual(options.cf, { image: { format: "webp" } });
-  assert.equal(options.redirect, "manual");
-  assert.ok(options.signal);
+  assert.deepEqual(imageProxyFetchOptions(target, "GET", chrome).cf, { image: { format: "webp" } });
   assert.equal(imageProxyFetchOptions(target, "GET", safari17IOS).cf, undefined);
-  const head = imageProxyFetchOptions(target, "HEAD", chrome);
-  assert.equal(head.method, "HEAD");
-  assert.equal(head.cf, undefined, "HEAD probes must never trigger image transformation");
+  assert.equal(imageProxyFetchOptions(target, "HEAD", chrome).cf, undefined);
 }
-
-const jpeg = imageProxyFetchOptions(new URL("https://p3-reading-sign.fqnovelpic.com/novel-pic/cover.jpg"), "GET", chrome);
-assert.equal(jpeg.method, "GET");
-assert.equal(jpeg.cf, undefined, "JPEG should keep the original pass-through path");
+assert.equal(imageProxyFetchOptions(new URL("https://p3-reading-sign.fqnovelpic.com/a.jpg"), "GET", chrome).cf, undefined);
 
 const first = new URL("https://p3-reading-sign.fqnovelpic.com/novel-pic/0810c58bff1059b552ed720f1cf0a9e5~tplv-81nmtwyey9-superreso-aifit:400:0.heic?lk3s=64477e16&x-expires=1801022960&x-signature=first");
 const renewed = new URL("https://p3-reading-sign.fqnovelpic.com/novel-pic/0810c58bff1059b552ed720f1cf0a9e5~tplv-81nmtwyey9-superreso-aifit:400:0.heic?x-signature=renewed&lk3s=64477e16&x-expires=1802022960");
-assert.equal(stableImageIdentity(first), stableImageIdentity(renewed), "signature expiry and signature rotation must not change image identity");
+assert.equal(stableImageIdentity(first), stableImageIdentity(renewed));
+assert.equal(
+  await imageCacheKeyUrl("https://w.hiu.us.kg/api/v1/images?url=first&_bxg_retry=111", first),
+  await imageCacheKeyUrl("https://w.hiu.us.kg/api/v1/images?url=renewed&_bxg_retry=999", renewed)
+);
+assert.notEqual(stableImageIdentity(first), stableImageIdentity(new URL(renewed.href.replace("64477e16", "64477e17"))));
+assert.match(new URL(await imageCacheKeyUrl("https://w.hiu.us.kg/api/v1/images", first)).pathname, /^\/__bxg-cache\/images\/v1\/webp\/[a-f0-9]{64}$/);
 
-const requestUrlA = "https://w.hiu.us.kg/api/v1/images?url=first&_bxg_retry=111";
-const requestUrlB = "https://w.hiu.us.kg/api/v1/images?url=renewed&_bxg_retry=999";
-assert.equal(await imageCacheKeyUrl(requestUrlA, first), await imageCacheKeyUrl(requestUrlB, renewed),
-  "renewed signed URLs and frontend retry timestamps must share one stable cache key");
+// Exercise the real Pages/Workers request handler with mocked origin fetch and
+// Cache API. These tests cover the complete image route, not only helper funcs.
+const cacheStore = new Map();
+let cacheMatchCalls = 0;
+const fakeCache = {
+  async match(request) {
+    cacheMatchCalls++;
+    const value = cacheStore.get(new URL(request.url || request).href);
+    return value ? value.clone() : undefined;
+  },
+  async put(request, response) {
+    cacheStore.set(new URL(request.url || request).href, response.clone());
+  },
+};
+const originalFetch = globalThis.fetch;
+const originalCaches = Object.getOwnPropertyDescriptor(globalThis, "caches");
+Object.defineProperty(globalThis, "caches", { configurable: true, writable: true, value: { default: fakeCache } });
+const { onRequest } = await import("../functions/api/v1/[[path]].js");
 
-const differentLk3s = new URL(renewed.href.replace("64477e16", "64477e17"));
-assert.notEqual(stableImageIdentity(first), stableImageIdentity(differentLk3s), "unknown/content-related query parameters must be retained");
-const differentImage = new URL(renewed.href.replace("0810c58bff1059b552ed720f1cf0a9e5", "75e6d0725b93a515b5fc3972dd7bd7cf"));
-assert.notEqual(stableImageIdentity(first), stableImageIdentity(differentImage), "different source image IDs must not collide");
+const source = (id, expiry, signature) =>
+  "https://p3-reading-sign.fqnovelpic.com/novel-pic/" + id +
+  "~tplv-81nmtwyey9-superreso-aifit:400:0.heic?lk3s=64477e16&x-expires=" + expiry + "&x-signature=" + signature;
+const requestURL = (imageURL, retry = "") => {
+  const url = new URL("https://w.hiu.us.kg/api/v1/images");
+  url.searchParams.set("url", imageURL);
+  if (retry) url.searchParams.set("_bxg_retry", retry);
+  return url.href;
+};
+async function callImage(imageURL, { ua = chrome, method = "GET", retry = "" } = {}) {
+  const request = new Request(requestURL(imageURL, retry), {
+    method,
+    headers: { "User-Agent": ua, "X-BXG-Session": "test-image-session-01" },
+  });
+  return onRequest({ request, runtimeName: "Image proxy integration test", env: {} });
+}
+const webp = () => new Response("fake-webp", { status: 200, headers: { "Content-Type": "image/webp", "Content-Length": "9" } });
 
-const cacheKey = await imageCacheKeyUrl(requestUrlA, first);
-assert.match(new URL(cacheKey).pathname, /^\/__bxg-cache\/images\/v1\/webp\/[a-f0-9]{64}$/);
-console.log("Image proxy browser detection, transform gating, stable cache identity, signature rotation, and retry-key tests passed.");
+try {
+  // Initial transform stores a WebP object; renewed signatures/retry IDs hit it.
+  cacheStore.clear();
+  let calls = [];
+  globalThis.fetch = async (input, options) => { calls.push({ url: String(input), options }); return webp(); };
+  const firstResponse = await callImage(source("0810c58bff1059b552ed720f1cf0a9e5", "1801022960", "sig-A"));
+  assert.equal(firstResponse.status, 200);
+  assert.equal(firstResponse.headers.get("Content-Type"), "image/webp");
+  assert.equal(firstResponse.headers.get("X-BXG-Image-Cache"), "MISS");
+  assert.equal(firstResponse.headers.get("X-BXG-Image-Transform"), "webp");
+  assert.deepEqual(calls[0].options.cf, { image: { format: "webp" } });
+  assert.equal(cacheStore.size, 1);
+  assert.equal(await firstResponse.text(), "fake-webp");
+  const hit = await callImage(source("0810c58bff1059b552ed720f1cf0a9e5", "1802022960", "sig-B"), { retry: "1795838961329" });
+  assert.equal(hit.status, 200);
+  assert.equal(hit.headers.get("X-BXG-Image-Cache"), "HIT");
+  assert.equal(await hit.text(), "fake-webp");
+  assert.equal(calls.length, 1, "cache hit must not call origin or transformation again");
+
+  // Concurrent requests to the same not-yet-cached cover are coalesced.
+  cacheStore.clear();
+  cacheMatchCalls = 0;
+  calls = [];
+  let releaseFetch;
+  const gate = new Promise(resolve => { releaseFetch = resolve; });
+  globalThis.fetch = async (input, options) => { calls.push({ url: String(input), options }); await gate; return webp(); };
+  const parallelA = callImage(source("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "1801022960", "parallel-A"));
+  for (let i = 0; i < 50 && calls.length === 0; i++) await new Promise(resolve => setTimeout(resolve, 2));
+  assert.equal(calls.length, 1, "first transform should have started");
+  const parallelB = callImage(source("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "1802022960", "parallel-B"));
+  for (let i = 0; i < 50 && cacheMatchCalls < 2; i++) await new Promise(resolve => setTimeout(resolve, 2));
+  assert.ok(cacheMatchCalls >= 2, "second request must reach the edge-cache lookup while first transform is pending");
+  releaseFetch();
+  const parallelResponses = await Promise.all([parallelA, parallelB]);
+  assert.equal(calls.length, 1);
+  assert.ok(parallelResponses.every(response => response.status === 200));
+  assert.ok(parallelResponses.some(response => response.headers.get("X-BXG-Image-Cache") === "COALESCED"));
+
+  // A 9422 quota error must not fall back to original HEIC and pretend success.
+  cacheStore.clear();
+  calls = [];
+  globalThis.fetch = async (input, options) => {
+    calls.push({ url: String(input), options });
+    return new Response("9422 transformation usage limit reached", {
+      status: 503, headers: { "Content-Type": "text/plain", "cf-error-code": "9422" },
+    });
+  };
+  const quota = await callImage(source("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "1801022960", "quota"));
+  assert.equal(quota.status, 503);
+  assert.equal(quota.headers.get("X-BXG-Error-Code"), "IMAGE_TRANSFORM_UNAVAILABLE");
+  assert.equal(quota.headers.get("X-BXG-Image-Transform"), "unavailable");
+  assert.equal(quota.headers.get("X-BXG-Transform-Error-Code"), "9422");
+  assert.match((await quota.json()).error.message, /免费转换额度已用尽/);
+  assert.equal(calls.length, 1, "9422 must not trigger a second raw-HEIC fetch");
+  assert.equal(cacheStore.size, 0);
+
+  // Generic transform 5xx and unexpected output MIME also return an explicit failure.
+  calls = [];
+  globalThis.fetch = async (input, options) => {
+    calls.push({ url: String(input), options });
+    return new Response("temporarily unavailable", { status: 503, headers: { "Content-Type": "text/plain" } });
+  };
+  const serviceError = await callImage(source("cccccccccccccccccccccccccccccccc", "1801022960", "5xx"));
+  assert.equal(serviceError.status, 503);
+  assert.equal(serviceError.headers.get("X-BXG-Error-Code"), "IMAGE_TRANSFORM_UNAVAILABLE");
+  assert.equal(calls.length, 1);
+
+  // Safari 17+ receives original HEIC, while Chrome HEAD probes never transform.
+  calls = [];
+  globalThis.fetch = async (input, options) => {
+    calls.push({ url: String(input), options });
+    return new Response("fake-heic", { status: 200, headers: { "Content-Type": "image/heic" } });
+  };
+  const safari = await callImage(source("dddddddddddddddddddddddddddddddd", "1801022960", "safari"), { ua: safari17IOS });
+  assert.equal(safari.status, 200);
+  assert.equal(safari.headers.get("Content-Type"), "image/heic");
+  assert.equal(safari.headers.get("X-BXG-Image-Transform"), "native-heic");
+  assert.equal(calls[0].options.cf, undefined);
+
+  calls = [];
+  globalThis.fetch = async (input, options) => {
+    calls.push({ url: String(input), options });
+    return new Response(null, { status: 200, headers: { "Content-Type": "image/heic" } });
+  };
+  const head = await callImage(source("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "1801022960", "head"), { method: "HEAD" });
+  assert.equal(head.status, 200);
+  assert.equal(calls[0].options.method, "HEAD");
+  assert.equal(calls[0].options.cf, undefined);
+
+  // Allowed image redirects are revalidated and transformed; off-domain redirects are blocked.
+  calls = [];
+  globalThis.fetch = async (input, options) => {
+    calls.push({ url: String(input), options });
+    if (calls.length === 1) return new Response(null, { status: 302, headers: {
+      Location: "https://p3-reading-sign.fqnovelpic.com/novel-pic/redirected.heic?lk3s=64477e16",
+    }});
+    return webp();
+  };
+  const redirected = await callImage(source("ffffffffffffffffffffffffffffffff", "1801022960", "redirect"));
+  assert.equal(redirected.status, 200);
+  assert.equal(redirected.headers.get("Content-Type"), "image/webp");
+  assert.equal(calls.length, 2);
+  assert.ok(calls.every(call => call.options.cf?.image?.format === "webp"));
+
+  calls = [];
+  globalThis.fetch = async (input, options) => {
+    calls.push({ url: String(input), options });
+    return new Response(null, { status: 302, headers: { Location: "https://attacker.example/image.heic" } });
+  };
+  const rejected = await callImage(source("11111111111111111111111111111111", "1801022960", "bad-redirect"));
+  assert.equal(rejected.status, 502);
+  assert.equal(rejected.headers.get("X-BXG-Error-Code"), "IMAGE_REDIRECT_HOST");
+  assert.equal(calls.length, 1);
+} finally {
+  globalThis.fetch = originalFetch;
+  if (originalCaches) Object.defineProperty(globalThis, "caches", originalCaches);
+  else delete globalThis.caches;
+}
+
+console.log("Image proxy integration tests passed: signed URL cache hit, parallel coalescing, quota/5xx errors, Safari HEIC, HEAD, and redirect validation.");

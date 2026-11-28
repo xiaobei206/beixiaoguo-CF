@@ -3,7 +3,7 @@ import { createClient, SearchFilter } from "openhongguo";
 import { ensureCencRuntime } from "../../cenc-runtime.js";
 import { openMediaSession, parseByteRange, parseContentRange, safeMediaSource, sealMediaSession } from "../../media-session.js";
 
-const VERSION = "0.1.16";
+const VERSION = "0.1.17";
 const MAX_CLIENTS = 128;
 const MAX_PROFILES = 256;
 const clients = new Map();
@@ -326,19 +326,15 @@ async function proxyCoverImageUncached(target, method, session, trace, userAgent
         }, trace);
         return errorResponse(502, "IMAGE_UPSTREAM_FETCH", "Cloudflare 获取上游封面失败：" + sanitizeDebugMessage(error?.message || error));
       }
-      debugRecord(session, "warn", "image.transform.fetch.failed", {
-        host: target.hostname, message: sanitizeDebugMessage(error?.message || error)
+      debugRecord(session, "error", "image.transform.unavailable", {
+        host: target.hostname, reason: "fetch-failed",
+        message: sanitizeDebugMessage(error?.message || error)
       }, trace);
-      transformEnabled = false;
-      try {
-        response = await fetchCurrent(false);
-      } catch (fallbackError) {
-        debugRecord(session, "error", "image.proxy.fetch.error", {
-          host: target.hostname, durationMs: Date.now() - startedAt,
-          message: sanitizeDebugMessage(fallbackError?.message || fallbackError)
-        }, trace);
-        return errorResponse(502, "IMAGE_UPSTREAM_FETCH", "图片转换和原图代理均失败：" + sanitizeDebugMessage(fallbackError?.message || fallbackError));
-      }
+      return errorResponse(503, "IMAGE_TRANSFORM_UNAVAILABLE", "Cloudflare 图片转换暂不可用，当前浏览器无法直接显示 HEIC/HEIF 原图。", {
+        "Cache-Control": "no-store",
+        "X-BXG-Image-Transform": "unavailable",
+        "X-BXG-Transform-Error-Code": "FETCH_FAILED"
+      });
     }
 
     const redirect = handleRedirect(response, redirectCount);
@@ -346,26 +342,25 @@ async function proxyCoverImageUncached(target, method, session, trace, userAgent
     if (redirect === true) continue;
 
     let contentType = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
-    // A 9422 quota response or an unsupported source must not break the old
-    // proxy path: retry the exact signed URL without cf.image once.
+    // Never report original HEIC as a usable success to browsers requiring
+    // WebP. Includes Images Free 9422 quota exhaustion.
     if (transformEnabled && (!response.ok || contentType !== "image/webp")) {
-      debugRecord(session, "warn", "image.transform.fallback", {
-        host: target.hostname, status: response.status, contentType
+      let responseDetail = "";
+      try { responseDetail = (await response.clone().text()).slice(0, 600); } catch (_) {}
+      const headerErrorCode = response.headers.get("cf-error-code") || response.headers.get("x-cf-error-code") || "";
+      const quota = /\b9422\b/.test(headerErrorCode + " " + responseDetail);
+      const transformErrorCode = quota ? "9422" : (headerErrorCode || (!response.ok ? "HTTP_" + response.status : "UNEXPECTED_CONTENT_TYPE"));
+      debugRecord(session, "error", "image.transform.unavailable", {
+        host: target.hostname, status: response.status, contentType, transformErrorCode,
+        responseDetail: sanitizeDebugMessage(responseDetail)
       }, trace);
-      transformEnabled = false;
-      try {
-        response = await fetchCurrent(false);
-      } catch (error) {
-        debugRecord(session, "error", "image.proxy.fallback.fetch.error", {
-          host: target.hostname, durationMs: Date.now() - startedAt,
-          message: sanitizeDebugMessage(error?.message || error)
-        }, trace);
-        return errorResponse(502, "IMAGE_UPSTREAM_FETCH", "图片转换失败且原图代理失败：" + sanitizeDebugMessage(error?.message || error));
-      }
-      const fallbackRedirect = handleRedirect(response, redirectCount);
-      if (fallbackRedirect instanceof Response) return fallbackRedirect;
-      if (fallbackRedirect === true) continue;
-      contentType = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+      return errorResponse(503, "IMAGE_TRANSFORM_UNAVAILABLE", quota
+        ? "Cloudflare Images 本月免费转换额度已用尽；当前浏览器无法显示原始 HEIC/HEIF。"
+        : "Cloudflare 无法将此 HEIC/HEIF 封面转换为 WebP；当前浏览器无法显示原始格式。", {
+          "Cache-Control": "no-store",
+          "X-BXG-Image-Transform": "unavailable",
+          "X-BXG-Transform-Error-Code": String(transformErrorCode).slice(0, 80)
+        });
     }
 
     const length = Number(response.headers.get("content-length")) || 0;
@@ -392,8 +387,9 @@ async function proxyCoverImageUncached(target, method, session, trace, userAgent
 
     const transformedToWebp = transformRequested && transformEnabled && contentType === "image/webp";
     const nativeHeic = isHeicImageUrl(target) && browserSupportsNativeHeic(userAgent);
+    // Cache API does not implement stale-while-revalidate.
     const cacheControl = transformedToWebp
-      ? "public, max-age=" + IMAGE_EDGE_CACHE_TTL_SECONDS + ", stale-while-revalidate=86400"
+      ? "public, max-age=" + IMAGE_EDGE_CACHE_TTL_SECONDS
       : "public, max-age=300, stale-while-revalidate=3600";
     const headers = new Headers({
       "Content-Type": contentType,

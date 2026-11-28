@@ -21,7 +21,7 @@
   let settingsRefreshTimer = 0;
   let deferredInstallPrompt = null;
   const DEBUG_STORAGE_KEY = "beixiaoguo.cf.debug-log";
-  const APP_VERSION = "0.1.16";
+  const APP_VERSION = "0.1.17";
   const EDGE_PREFETCH_COUNT = 6;
   const BROWSER_PRELOAD_COUNT = 3;
   const MAX_DEBUG_ENTRIES = 180;
@@ -756,21 +756,51 @@
     if (form) form.hidden = true;
   }
 
+  function browserSupportsNativeHeicForUi() {
+    const ua = String(navigator.userAgent || "");
+    if (!/Safari\//i.test(ua)) return false;
+    if (/(?:Chrome|CriOS|Chromium|Edg|EdgiOS|OPR|Opera|FxiOS|Firefox|DuckDuckGo|SamsungBrowser|UCBrowser|YaBrowser|Brave|GSA)\//i.test(ua)) return false;
+    const version = ua.match(/Version\/(\d+)(?:\.\d+)?/i);
+    return !!version && Number(version[1]) >= 17;
+  }
+
+  function imageSourceDetails(image) {
+    try {
+      const displayed = new URL(image.dataset.originalSrc || image.currentSrc || image.src, window.location.origin);
+      const source = displayed.searchParams.get("url");
+      return source ? new URL(source) : displayed;
+    } catch (_) { return null; }
+  }
+
+  function replaceBrokenGridImage(image) {
+    const placeholder = document.createElement("div");
+    placeholder.className = "poster-placeholder";
+    placeholder.textContent = "贝";
+    image.replaceWith(placeholder);
+  }
+
   function handleGridImageError(event) {
     const image = event.target;
     if (!image || image.tagName !== "IMG") return;
     let imageHost = "";
     try { imageHost = new URL(image.currentSrc || image.src).hostname; } catch (_) {}
-    const originalHost = (() => {
-      try {
-        const displayed = new URL(image.dataset.originalSrc || image.currentSrc || image.src, window.location.origin);
-        const source = displayed.searchParams.get("url");
-        return source ? new URL(source).hostname : displayed.hostname;
-      } catch (_) { return ""; }
-    })();
-    debugWrite("warn", "image.load.error", {
-      proxyHost:imageHost, sourceHost:originalHost, retryCount:Number(image.dataset.retryCount) || 0
+    const sourceUrl = imageSourceDetails(image);
+    const originalHost = sourceUrl ? sourceUrl.hostname : "";
+    const requiresWebp = !!sourceUrl && /\.(?:heic|heif)$/i.test(sourceUrl.pathname) && !browserSupportsNativeHeicForUi();
+    debugWrite(requiresWebp ? "error" : "warn", requiresWebp ? "image.heic.transform.display-failed" : "image.load.error", {
+      proxyHost:imageHost, sourceHost:originalHost,
+      sourceFormat:sourceUrl ? sourceUrl.pathname.split(".").pop().toLowerCase() : "",
+      retryCount:Number(image.dataset.retryCount) || 0,
+      action:requiresWebp ? "skip-duplicate-transform-and-show-placeholder" : "normal-retry"
     });
+
+    // Retrying a failed HEIC request with _bxg_retry would repeat the same
+    // transformation. Show the normal placeholder instead.
+    if (requiresWebp) {
+      replaceBrokenGridImage(image);
+      return;
+    }
+
     let imagePath = "";
     try { imagePath = new URL(image.currentSrc || image.src, window.location.origin).pathname; } catch (_) {}
     if (!imageProbeStarted && imagePath === "/api/v1/images") {
@@ -798,10 +828,7 @@
       }, 350);
       return;
     }
-    const placeholder = document.createElement("div");
-    placeholder.className = "poster-placeholder";
-    placeholder.textContent = "贝";
-    image.replaceWith(placeholder);
+    replaceBrokenGridImage(image);
   }
 
   function renderCards(items, append) {
