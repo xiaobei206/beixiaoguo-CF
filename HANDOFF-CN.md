@@ -13,7 +13,7 @@
 - 修复 IMG 生命周期竞争：转换过程中隐藏原 IMG，但不改写其 `src`；等 JPEG Blob 转换完毕才设置 Blob URL。增加 `started`、`success`、`failed`、`display-failed` 以及阶段字段（抓取原图、读取 Blob、加载解码库、解码、显示）供后续 DEBUG 定位。
 - 自托管解码器仍不从第三方 CDN 加载；签名 URL 不写入 DEBUG/日志/本地存储；同时最多两个本地转换任务。普通 JPEG/PNG/WebP 仍走代理原字节路径。
 - 维护仓库代码提交：[`b9075a85c504ebcd988c05f7d4ef27d56d9dcf50`](https://github.com/xiaobei206/beixiaoguo-CF/commit/b9075a85c504ebcd988c05f7d4ef27d56d9dcf50)。版本号、API、前端与 HTML 缓存参数同步为 0.1.21。
-- - 0.1.21 CI [#46136309833](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46136309833) 当前状态：`in_progress`，尚未得到最终结论；CI 未通过前不能部署。
+- - 0.1.21 代码 CI [#46136309833](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46136309833) 已全部通过：Linux `npm test`、静态检查、Pages Functions bundle/runtime smoke、Workers bundle/runtime smoke，以及 Windows `npm test` 均成功。此结果验证代码和 mock/构建路径，不替代真实 iPhone Safari 或线上部署验收。
 
 ### 部署与实机验收状态
 - 维护主线 `xiaobei206/beixiaoguo-CF` 当前代码 SHA：`b9075a85c504ebcd988c05f7d4ef27d56d9dcf50`。
