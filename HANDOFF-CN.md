@@ -8,7 +8,7 @@
 - **排障结论：** 这条已签名模板 URL 在当前配置下固定返回 HEIC；请求头协商不起作用。无法仅靠 Worker 改写路径而保留有效签名。上游签发逻辑若能签发明确 WebP/JPEG 模板 URL，是更理想的源头修复，但当前客户端没有签发密钥/接口。
 - 参考官方 VeImageX 文档：图片输出格式可在模板/签发 URL 中指定；格式自适应需要模板启用，并非任意 Accept 都自动转码。文档说明通用机制，不证明这条签名 URL 还能通过某个未测试参数变格式。
 - **0.1.20 目标：** 保留常规 Cloudflare WebP 转换作为快路径；该路径失败时，从受限同源 API 取原始 HEIC/HEIF，浏览器用自托管 `heic-to` 解码为 JPEG。签名 URL 只在当前页面/请求内存流转，不改写签名、不上报到第三方。只转换触发失败的图片，其他懒加载封面各自失败时再回退，最多并发两个转换；普通 JPEG/PNG/WebP 与 Safari 17+ 原生 HEIC 路径不变。
-- 维护仓库 0.1.20 首次实现提交：`6d4a5f695fd26fa6b3c72d5212fbb2934931f9d1`；静态断言修正提交：`84def623e35106a95bd0ae4c4ce36aed6ecd170a`。CI [#46131317865](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46131317865) 的 Linux `npm test` 因旧动作字符串断言失败，已经定位并修正。后续复核发现首张失败封面不应触发全页懒加载封面扫描，因此本轮进一步改为仅转换触发错误的当前图片；其他图片各自失败后再按需转码。CI [#46131480680](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46131480680) 针对上一代码 SHA 正在运行，将被本轮新提交触发的 CI 取代。未经最新 SHA 的 CI 全通过之前不可部署，生产仍未升级到 0.1.20。真实验收尚未完成，必须在 iPhone 13 / iOS 16 Safari 与 Chromium 实测后才能标记问题已解决。维护主线 `xiaobei206/beixiaoguo-CF`；部署 fork `qmancf206/beixiaoguo-CF` 需要独立确认同步与 Worker Build 状态。
+- 维护仓库 0.1.20 代码提交：初版 `6d4a5f695fd26fa6b3c72d5212fbb2934931f9d1`，静态断言修订 `84def623e35106a95bd0ae4c4ce36aed6ecd170a`，按需回退性能修订 `cbadf8ac008bb6ae0c9a331f3d73219f8f01c203`。最新 CI [#46131676914](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46131676914) 已通过：Linux 静态/npm 测试、Pages Function 构建与运行时冒烟、Workers 构建与运行时冒烟，Windows `npm test` 也成功。生产仍未升级到 0.1.20，且 CI 通过不等于已在 iPhone 13 / iOS 16 Safari 实机验收。真实验收尚未完成，必须在 iPhone 13 / iOS 16 Safari 与 Chromium 实测后才能标记问题已解决。维护主线 `xiaobei206/beixiaoguo-CF`；部署 fork `qmancf206/beixiaoguo-CF` 需要独立确认同步与 Worker Build 状态。
 
 
 ### 历史记录：0.1.19 上游图片探测 DEBUG 专版（2026-11-28)
@@ -185,4 +185,4 @@ npm.cmd test
 
 ## 新对话无缝接手指令（2026-11-28）
 
-新 GPT 接手时，先读根目录 `AGENTS.md`、本文件和开发日志顶部。最新源站探测已经证明 Accept 与 URL 变体不能让签名源输出 WebP；勿重跑那 12 组探测。0.1.20 的第一动作是确认并修复静态检查，然后核对 CI [#46131317865](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46131317865) 的最终状态；首轮 Linux job 因旧文案断言失败，修正后必须重新跑完整 CI。未经 CI 全通过，不得同步部署 fork。部署后先确认生产 `/api/v1/health` 版本为 0.1.20，再在 iPhone 13 / iOS 16 Safari、Chromium 测首页封面、详情封面和普通 JPEG/PNG/WebP。每次修订后本轮同步更新本交接文件与开发日志；CI 或真实浏览器尚未验证时必须明确标记，不能宣称问题已修复。
+新 GPT 接手时，先读根目录 `AGENTS.md`、本文件和开发日志顶部。最新源站探测已经证明 Accept 与 URL 变体不能让签名源输出 WebP；勿重跑那 12 组探测。0.1.20 当前代码提交为 `cbadf8ac008bb6ae0c9a331f3d73219f8f01c203`，CI [#46131676914](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46131676914) 已全通过。接下来须由有权限账号把维护仓库 `xiaobei206/beixiaoguo-CF` 快进同步到部署 fork `qmancf206/beixiaoguo-CF`；Worker Build 完成后确认生产 `/api/v1/health` 返回 0.1.20，再在 iPhone 13 / iOS 16 Safari、Chromium 测首页封面、详情封面和普通 JPEG/PNG/WebP。当前仍不能声称实际手机已修复。每次代码、测试、配置或版本修订后，本轮同步更新本交接文件与开发日志。

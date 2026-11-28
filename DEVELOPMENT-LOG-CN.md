@@ -8,7 +8,7 @@
 - 普通 JPEG/PNG/WebP 处理不变；Safari 17+ 原生 HEIC 路径不变。该方案需真实测试 iOS 16 Safari、Chromium、详情/主页图片和普通格式后才能视作已验收。
 
 ### 测试、提交与部署边界
-- 0.1.20 首次实现提交：`6d4a5f695fd26fa6b3c72d5212fbb2934931f9d1`；静态检查修订提交：`84def623e35106a95bd0ae4c4ce36aed6ecd170a`。首轮 CI [#46131317865](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46131317865) 的 Linux `npm test` 在 `scripts/check-static.mjs:89` 因旧动作字符串断言失败；该断言已更新。进一步复核后，将前端回退从首张失败封面后的全页面预扫描，改为仅转换触发错误的当前图片；其他图片各自按需回退，并保留最多两个并发转换。CI [#46131480680](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46131480680) 针对旧代码 SHA 触发、待完成；新性能修订会触发更新版 CI。最新提交 SHA 及对应 CI 结果待完成后回填。
+- 0.1.20 初始实现提交：`6d4a5f695fd26fa6b3c72d5212fbb2934931f9d1`；静态检查修订提交：`84def623e35106a95bd0ae4c4ce36aed6ecd170a`；按需转换性能修订：`cbadf8ac008bb6ae0c9a331f3d73219f8f01c203`。CI [#46131676914](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46131676914) 已通过：Linux 静态/npm 测试、Pages Function bundle、Pages runtime smoke、Workers bundle、Workers runtime smoke、Windows npm test 全部成功。仍需部署到独立 fork，并在 iPhone 13 / iOS 16 Safari 和 Chromium 进行实机验收；此 CI 仅证明源码测试和构建，不证明线上图片已恢复。
 - `heic-to` 项目标明 LGPL-3.0；构建步骤随发布复制对应许可证。浏览器用法按上游公开 README 实现。
 - 目前真实生产验收未完成；代码/CI 通过不代表 iPhone 13 iOS 16 Safari 和实际 Cloudflare Worker 已恢复。部署 fork 的更新与 Worker Build 必须另外确认。
 
