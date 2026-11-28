@@ -26,13 +26,9 @@ Pages Function 中使用 openhongguo 的 Node.js/WASM SDK，注入基于 Fetch �
 
 播放解析为受保护的渐进式 MP4 建立 AES-GCM 加密的短时媒体会话令牌；媒体请求由同源 /api/v1/media/:token 代理校验 HTTP Range，Go/WASM CENC 布局解析器按需把相交的 MP4 元数据与 AES-CTR 样本块还原为可播放字节。明文内容密钥不会返回到浏览器 JSON 或 URL；生产 Worker 必须配置 BXG_MEDIA_SECRET。
 
-## 浏览器自选 Cloudflare 入口 IP（0.1.13）
-
-前端提供本机线路列表，支持自填 IPv4／IPv6、固定端口 443；线路内容与选择保存在浏览器 localStorage。选择后只发起一次同源 `/api/v1/route?alt_ip=...` 请求，将 IP 提交给 Worker。Worker 先校验地址，再将合法值放进内部响应头 `X-BXG-Alt-IP`。Cloudflare Zone 的 Response Header Transform Rules 从 `http.response.headers["x-bxg-alt-ip"][0]` 读取已验证值，公告 `h2="IP:443"; ma=300`；选择默认线路时设置 `Alt-Svc: clear`，最后再删除内部头。Worker 读取请求的 `Alt-Used` 并将其放进边缘诊断；前端检查最终响应是否带有目标 `Alt-Svc`。
-
-Cloudflare 会过滤 Worker 源站直接添加的 `Alt-Svc`，所以必须在 Cloudflare Zone 的 Response Header Transform Rules 阶段动态补充。这要求绑定用户自己的橙云自定义域名；`workers.dev`／`pages.dev` 默认域名不在用户 Zone 内，无法配置该规则。Alt-Svc 是备用服务提示，只用于后续新连接，不会强制中断现有连接；备用 IP 必须支持原始站点域名的 TLS SNI、证书验证与 HTTP/2。仅能跑 VLESS 不足以证明浏览器接入可用。
-
 ## 运行诊断
+
+0.1.22 移除了对终端用户无实际作用的 Alt-Svc 自选线路、上游图片格式探测、部署教程和 Cloudflare 不支持的常驻预热/服务端缓存设置 UI/API。DEBUG 日志与每请求 Trace 保留；图片失败时仍可从诊断包定位浏览器解码阶段。
 
 首页右上角的 DEBUG 入口可复制前端和边缘服务端诊断包。前端记录 API 状态／耗时、响应字段摘要、封面 URL 协议分布和资源加载错误；每个 API 响应通过响应头返回该次请求的 trace ID、Go/WASM 状态和上游请求事件，因此 Cloudflare 将后续请求分配给不同 isolate 时，仍能保留本次调用的诊断信息。边缘端按 `X-BXG-Session` 隔离的内存日志仍作为辅助记录，最多保留一小时、每会话 240 条；前端本地保留最近 180 条。敏感查询参数、Cookie、Token 和完整 URL 会脱敏。日志不包含请求正文。
 
@@ -74,11 +70,6 @@ Workers 入口同时启用 Workers Cache，使完整 200 媒体响应还能进�
 3. 用真实受保护分集端到端验收边缘媒体 Range 代理与 CENC 解密；对不支持的封装明确提示。
 4. 优化封面图片格式回退和 HTTP 缓存。
 5. 保留电视接力给原版 N1，或设计本地 LAN 助手。
-
-## 部署教程
-
-Pages 与 Workers 的完整配置、GitHub 授权、ZIP／目录上传限制、CLI 命令及验收步骤见 [docs/deploy-cloudflare-cn.md](deploy-cloudflare-cn.md)。
-
 
 ## CENC 边缘媒体链路
 

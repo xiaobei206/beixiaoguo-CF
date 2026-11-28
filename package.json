@@ -1,6 +1,6 @@
 {
   "name": "beixiaoguo-cf",
-  "version": "0.1.21",
+  "version": "0.1.22",
   "private": true,
   "type": "module",
   "description": "贝小果 Cloudflare Pages / Workers 轻量版",
@@ -8,7 +8,7 @@
     "prebuild": "node scripts/build-openhongguo.mjs && node scripts/patch-openhongguo.mjs && node scripts/copy-heic-to.mjs",
     "build": "node scripts/check-static.mjs",
     "pretest": "node scripts/build-openhongguo.mjs && node scripts/patch-openhongguo.mjs && node scripts/copy-heic-to.mjs",
-    "test": "node scripts/check-static.mjs && node scripts/test-route-ip.mjs && node scripts/test-media-session.mjs && node scripts/test-image-proxy.mjs && node scripts/test-image-probe.mjs && node scripts/test-image-client-fallback.mjs && node scripts/smoke-sdk.mjs"
+    "test": "node scripts/check-static.mjs && node scripts/test-media-session.mjs && node scripts/test-image-proxy.mjs && node scripts/test-image-client-fallback.mjs && node scripts/smoke-sdk.mjs"
   },
   "devDependencies": {
     "wrangler": "4.168.0",

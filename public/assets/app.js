@@ -18,28 +18,20 @@
   })();
   let playbackHeartbeatTimer = 0;
   let playerControlsTimer = 0;
-  let settingsRefreshTimer = 0;
   let deferredInstallPrompt = null;
   const DEBUG_STORAGE_KEY = "beixiaoguo.cf.debug-log";
-  const APP_VERSION = "0.1.21";
+  const APP_VERSION = "0.1.22";
   const EDGE_PREFETCH_COUNT = 6;
   const BROWSER_PRELOAD_COUNT = 3;
   const MAX_DEBUG_ENTRIES = 180;
-  const ROUTE_LIST_STORAGE_KEY = "beixiaoguo.cf.alt-routes";
-  const ROUTE_ACTIVE_STORAGE_KEY = "beixiaoguo.cf.alt-route-selected";
-  const MAX_ROUTE_ENTRIES = 24;
-  let routeEntries = loadRouteEntries();
-  let activeRouteId = loadActiveRouteId();
   let debugEntries = loadDebugEntries();
   let serverDebugEntries = [];
   let serverDebugRuntime = null;
-  let imageProbeStarted = false;
-  let lastFailedCoverUrl = "";
+  let imageHeadDiagnosticStarted = false;
   let heicConverterPromise = null;
   let activeHeicConversions = 0;
   const heicConversionWaiters = [];
   const HEIC_CLIENT_MAX_BYTES = 10 << 20;
-  let lastImageProbeResult = null;
   function todayDateKey() {
     const now = new Date();
     return String(now.getFullYear()) + String(now.getMonth() + 1).padStart(2, "0") + String(now.getDate()).padStart(2, "0");
@@ -139,284 +131,6 @@
     }
   }
 
-
-  function normalizeRouteIPAddress(raw) {
-    let value = String(raw || "").trim();
-    if (value.startsWith("[") && value.endsWith("]")) value = value.slice(1, -1);
-    if (!value || /[\s/?#@]/.test(value)) return "";
-    if (value.includes(":")) {
-      try {
-        const parsed = new URL("https://[" + value + "]/");
-        const hostname = parsed.hostname;
-        if (!hostname.startsWith("[") || !hostname.endsWith("]")) return "";
-        const normalized = hostname.slice(1, -1).toLowerCase();
-        return normalized.includes("%") ? "" : normalized;
-      } catch (_) { return ""; }
-    }
-    const parts = value.split(".");
-    if (parts.length !== 4 || parts.some((part) => !/^\d{1,3}$/.test(part) || Number(part) > 255)) return "";
-    return parts.map((part) => String(Number(part))).join(".");
-  }
-
-  function loadRouteEntries() {
-    try {
-      const parsed = JSON.parse(localStorage.getItem(ROUTE_LIST_STORAGE_KEY) || "[]");
-      if (!Array.isArray(parsed)) return [];
-      const seen = new Set();
-      return parsed.slice(0, MAX_ROUTE_ENTRIES).map((item, index) => {
-        const ip = normalizeRouteIPAddress(item && item.ip);
-        if (!ip || seen.has(ip)) return null;
-        seen.add(ip);
-        return {
-          id:String(item.id || ("route-" + index)),
-          name:String(item.name || ("自选线路 " + (index + 1))).trim().slice(0, 32) || ("自选线路 " + (index + 1)),
-          ip
-        };
-      }).filter(Boolean);
-    } catch (_) { return []; }
-  }
-
-  function loadActiveRouteId() {
-    try { return localStorage.getItem(ROUTE_ACTIVE_STORAGE_KEY) || "auto"; }
-    catch (_) { return "auto"; }
-  }
-
-  function saveRoutePreferences() {
-    try {
-      localStorage.setItem(ROUTE_LIST_STORAGE_KEY, JSON.stringify(routeEntries));
-      localStorage.setItem(ROUTE_ACTIVE_STORAGE_KEY, activeRouteId);
-    } catch (_) {
-      showToast("浏览器本地存储不可用，线路设置未能保存");
-    }
-  }
-
-  function getActiveRoute() {
-    if (activeRouteId === "auto") return null;
-    return routeEntries.find((item) => item.id === activeRouteId) || null;
-  }
-
-  function routeAuthority(ip) {
-    return String(ip).includes(":") ? "[" + ip + "]" : String(ip);
-  }
-
-  function usesCloudflareManagedHostname() {
-    const host = String(window.location.hostname || "").toLowerCase();
-    return host.endsWith(".workers.dev") || host.endsWith(".pages.dev");
-  }
-
-  function renderRouteStatus(message, kind) {
-    const node = $("#route-status");
-    if (!node) return;
-    node.textContent = message;
-    node.className = "route-status" + (kind ? " " + kind : "");
-  }
-
-  function renderRouteDialog() {
-    const list = $("#route-list");
-    const current = $("#route-current-label");
-    const note = $("#route-domain-note");
-    if (!list || !current || !note) return;
-    const active = getActiveRoute();
-    current.textContent = active ? active.name + " · " + active.ip + ":443" : "默认线路（Cloudflare 自动）";
-    if (usesCloudflareManagedHostname()) {
-      note.textContent = "当前域名是 " + window.location.hostname + "。Cloudflare 的 workers.dev／pages.dev 默认域名不能使用 Zone Response Header Transform Rules；自选 IP 目前只能保存在本机，不能改变浏览器实际接入线路。需要绑定自己控制的橙云域名并配置下方规则。";
-      note.className = "route-domain-note warn";
-    } else {
-      note.textContent = "当前使用自定义域名 " + window.location.hostname + "。还需要在该域名所在 Cloudflare Zone 配置下方两条响应头规则；确认响应包含你选的 Alt-Svc 后，浏览器才会尝试使用备用 IP。";
-      note.className = "route-domain-note";
-    }
-    const autoChecked = activeRouteId === "auto" || !active;
-    let html = '<div class="route-option' + (autoChecked ? " active" : "") + '">' +
-      '<label><input type="radio" name="active-route" value="auto"' + (autoChecked ? " checked" : "") + '>' +
-      '<span class="route-option-copy"><strong>默认线路</strong><small>Cloudflare 自动接入</small></span></label></div>';
-    for (const item of routeEntries) {
-      const selected = !!active && item.id === active.id;
-      html += '<div class="route-option' + (selected ? " active" : "") + '">' +
-        '<label><input type="radio" name="active-route" value="' + escapeHTML(item.id) + '"' + (selected ? " checked" : "") + '>' +
-        '<span class="route-option-copy"><strong>' + escapeHTML(item.name) + '</strong><small>' + escapeHTML(item.ip) + ':443</small></span></label>' +
-        '<button class="route-remove" type="button" data-remove-route="' + escapeHTML(item.id) + '">删除</button></div>';
-    }
-    list.innerHTML = html;
-  }
-
-  async function announceActiveRoute(ip, quiet) {
-    if (!window.isSecureContext) {
-      renderRouteStatus("自选线路需要 HTTPS 安全上下文；当前页面不能公告备用 HTTPS 服务。", "warn");
-      return false;
-    }
-    if (usesCloudflareManagedHostname()) {
-      const message = ip
-        ? "已保存 " + ip + "，但当前 workers.dev／pages.dev 域名无法配置动态 Alt-Svc 响应规则，因此网络入口没有切换。绑定自有橙云域名后才能启用。"
-        : "已选择默认线路；当前使用 Cloudflare 默认域名解析和自动接入。";
-      renderRouteStatus(message, ip ? "warn" : "");
-      debugWrite(ip ? "warn" : "info", "network.route.default-domain", {host:window.location.hostname,ip:ip || ""});
-      return false;
-    }
-    try {
-      const routeValue = ip || "auto";
-      const response = await fetch("/api/v1/route?alt_ip=" + routeValue + "&refresh=" + Date.now(), {
-        method:"GET", cache:"no-store",
-        headers:{"Accept":"application/json","X-BXG-Session":playbackClientId}
-      });
-      captureEdgeTrace(response);
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !payload.ok) throw new Error(payload.error?.message || ("HTTP " + response.status));
-      if (payload.selectedAltIp !== routeValue) throw new Error("Cloudflare Worker 返回的线路地址与选择不一致");
-      const altSvc = response.headers.get("Alt-Svc") || "";
-      const altUsed = String(payload.altUsed || "");
-      const authority = ip ? routeAuthority(ip) + ":443" : "";
-      const advertised = !!ip && altSvc.includes(authority);
-      const usedNow = !!ip && altUsed.includes(authority);
-      if (ip && advertised) {
-        const message = usedNow
-          ? "已下发 " + authority + "，本次诊断请求也报告了 Alt-Used，浏览器已通过该备用入口建立连接。"
-          : "Cloudflare 已向浏览器下发 " + authority + "。浏览器会在新连接上尝试使用；当前已建立的连接不会被强制迁移。";
-        renderRouteStatus(message, "ok");
-        debugWrite("info", "network.route.alt-svc.advertised", {ip,authority,altSvc,altUsed});
-      } else if (ip) {
-        renderRouteStatus("IP 已保存在本机，但本次响应没有公告对应的 Alt-Svc。请检查自定义域名是否已配置动态响应头规则；没有该规则时不会真正切换。", "warn");
-        debugWrite("warn", "network.route.alt-svc.missing", {ip,host:window.location.hostname,altSvc,altUsed});
-      } else {
-        renderRouteStatus(altSvc.trim().toLowerCase() === "clear"
-          ? "已清除自选入口，浏览器将回到默认 Cloudflare 线路。"
-          : "已选择默认线路。若此前使用过自选 IP，请确认默认线路规则已返回 Alt-Svc: clear。", "");
-        debugWrite("info", "network.route.default", {altSvc,altUsed});
-      }
-      return advertised || (!ip && altSvc.trim().toLowerCase() === "clear");
-    } catch (error) {
-      const message = "线路选择已保存在本机，但请求 Cloudflare 刷新线路信息失败：" + (error.message || String(error));
-      renderRouteStatus(message, "warn");
-      debugWrite("warn", "network.route.refresh.failed", {ip:ip || "",message:error.message || String(error)});
-      if (!quiet) showToast("线路信息刷新失败，已保留本机设置");
-      return false;
-    }
-  }
-
-  async function selectRoute(id) {
-    if (id !== "auto" && !routeEntries.some((item) => item.id === id)) return;
-    activeRouteId = id;
-    saveRoutePreferences();
-    const active = getActiveRoute();
-    renderRouteDialog();
-    await announceActiveRoute(active ? active.ip : "", false);
-  }
-
-  async function addRouteFromForm(event) {
-    event.preventDefault();
-    const ip = normalizeRouteIPAddress($("#route-ip").value);
-    if (!ip) {
-      showToast("请输入有效的 IPv4 或 IPv6 地址，不要填写端口");
-      $("#route-ip").focus();
-      return;
-    }
-    if (routeEntries.some((item) => item.ip === ip)) {
-      showToast("这条 IP 已经添加过了");
-      return;
-    }
-    if (routeEntries.length >= MAX_ROUTE_ENTRIES) {
-      showToast("最多保存 " + MAX_ROUTE_ENTRIES + " 条自选线路");
-      return;
-    }
-    const name = String($("#route-name").value || "").trim().slice(0, 32) || ("自选线路 " + (routeEntries.length + 1));
-    const id = "route-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7);
-    routeEntries.push({id,name,ip});
-    activeRouteId = id;
-    saveRoutePreferences();
-    $("#route-name").value = "";
-    $("#route-ip").value = "";
-    renderRouteDialog();
-    await announceActiveRoute(ip, false);
-  }
-
-  async function removeRoute(id) {
-    routeEntries = routeEntries.filter((item) => item.id !== id);
-    const wasActive = activeRouteId === id;
-    if (wasActive) activeRouteId = "auto";
-    saveRoutePreferences();
-    renderRouteDialog();
-    if (wasActive) {
-      await announceActiveRoute("", false);
-    }
-  }
-
-  async function copyRouteRuleGuide() {
-    const guide = [
-      "Cloudflare → Rules → Transform Rules → Response Header Transform Rules",
-      "规则 1（IPv4）",
-      '(http.host eq "YOUR_HOSTNAME" and http.request.uri.path eq "/api/v1/route" and len(http.response.headers["x-bxg-alt-ip"][0]) gt 0 and http.response.headers["x-bxg-alt-ip"][0] ne "auto" and not (http.response.headers["x-bxg-alt-ip"][0] contains ":"))',
-      "响应头：Alt-Svc；操作：Set dynamic",
-      '值：concat("h2=\\\"", http.response.headers["x-bxg-alt-ip"][0], ":443\\\"; ma=300")',
-      "",
-      "规则 2（IPv6）",
-      '(http.host eq "YOUR_HOSTNAME" and http.request.uri.path eq "/api/v1/route" and http.response.headers["x-bxg-alt-ip"][0] contains ":")',
-      "响应头：Alt-Svc；操作：Set dynamic",
-      '值：concat("h2=\\\"[", http.response.headers["x-bxg-alt-ip"][0], "]:443\\\"; ma=300")',
-      "",
-      "规则 3（恢复默认线路）",
-      '(http.host eq "YOUR_HOSTNAME" and http.request.uri.path eq "/api/v1/route" and http.response.headers["x-bxg-alt-ip"][0] eq "auto")',
-      "响应头：Alt-Svc；操作：Set static；值：clear",
-      "",
-      "规则 4（清理内部响应头）",
-      '(http.host eq "YOUR_HOSTNAME" and http.request.uri.path eq "/api/v1/route")',
-      "响应头：X-BXG-Alt-IP；操作：Remove",
-      "",
-      "将 YOUR_HOSTNAME 替换为自定义橙云域名。规则从 Worker 已验证的响应头取值，不直接反射未经验证的 URL 参数；workers.dev/pages.dev 不能使用 Zone Transform Rules。"
-    ].join("\n");
-    try {
-      await navigator.clipboard.writeText(guide);
-      showToast("四条 Cloudflare 规则说明已复制");
-    } catch (_) {
-      const field = document.createElement("textarea");
-      field.value = guide;
-      field.style.position = "fixed";
-      field.style.opacity = "0";
-      document.body.appendChild(field);
-      field.select();
-      try { document.execCommand("copy"); showToast("四条 Cloudflare 规则说明已复制"); }
-      catch (_) { showToast("复制失败，请展开规则说明手动复制"); }
-      field.remove();
-    }
-  }
-
-  function loadFavorites() {
-    try {
-      const parsed = JSON.parse(localStorage.getItem("beixiaoguo.favorites") || "[]");
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (_) {
-      return [];
-    }
-  }
-
-  function saveFavorites() {
-    try {
-      localStorage.setItem("beixiaoguo.favorites", JSON.stringify(state.favorites));
-    } catch (_) {
-      showToast("浏览器存储空间不可用，收藏未能保存");
-    }
-  }
-
-  function setPlaybackActivity(playing) {
-    const payload = JSON.stringify({client_id:playbackClientId,playing:!!playing});
-    try {
-      fetch("/api/v1/playback/activity", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:payload,
-        keepalive:!playing
-      }).catch(() => {});
-    } catch (_) {}
-    window.clearInterval(playbackHeartbeatTimer);
-    playbackHeartbeatTimer = 0;
-    if (playing) {
-      playbackHeartbeatTimer = window.setInterval(() => {
-        fetch("/api/v1/playback/activity", {
-          method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body:payload
-        }).catch(() => {});
-      }, 15000);
-    }
-  }
 
   function showToast(message) {
     const el = $("#toast");
@@ -599,60 +313,9 @@
       runtime:serverDebugRuntime,
       frontend:debugEntries,
       edge:serverDebugEntries,
-      imageProbe:lastImageProbeResult
     };
   }
 
-  function findImageProbeSourceUrl() {
-    if (lastFailedCoverUrl) return lastFailedCoverUrl;
-    for (const image of document.querySelectorAll("img[data-original-src]")) {
-      const source = imageSourceDetails(image);
-      if (source && /\.(?:heic|heif)$/i.test(source.pathname) && (source.hostname === "fqnovelpic.com" || source.hostname.endsWith(".fqnovelpic.com"))) return source.href;
-    }
-    return "";
-  }
-  function openImageProbePanel() {
-    const dialog = $("#image-probe-dialog"), field = $("#image-probe-url"), status = $("#image-probe-status");
-    if (!field.value.trim()) field.value = findImageProbeSourceUrl();
-    if (!field.value.trim()) status.textContent = "尚未捕获到 HEIC/HEIF 封面。浏览页面让失败封面出现后再打开，或粘贴原始上游 URL。";
-    if (!dialog.open) dialog.showModal();
-    field.focus();
-  }
-  async function runImageProbe() {
-    const button = $("#image-probe-run"), field = $("#image-probe-url"), status = $("#image-probe-status");
-    const summary = $("#image-probe-summary"), output = $("#image-probe-output"), sourceUrl = field.value.trim();
-    if (!sourceUrl) { status.textContent = "请先选择或粘贴一条 HEIC/HEIF 上游 URL。"; return; }
-    if (button.disabled) return;
-    button.disabled = true; $("#image-probe-copy").disabled = true;
-    status.textContent = "正在执行 12 组受限 GET 探测；只检查响应头与小段错误文本，不下载整张图片……";
-    summary.textContent = ""; output.textContent = "等待上游探测结果…";
-    let host = ""; try { host = new URL(sourceUrl).hostname; } catch (_) {}
-    debugWrite("info", "image.upstream.probe.started", {host});
-    try {
-      const result = await request("/api/v1/debug/image-probe", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:sourceUrl})});
-      lastImageProbeResult = result;
-      const mimes = Array.isArray(result.summary?.observedMimeTypes) ? result.summary.observedMimeTypes : [];
-      summary.textContent = result.summary?.recommendation || "探测已结束，请查看各项状态。";
-      status.textContent = "完成：" + (result.tests || []).length + " 组 GET · 观测 MIME " + (mimes.join(", ") || "未检测到") + " · 签名信息已省略。";
-      output.textContent = JSON.stringify(result, null, 2);
-      debugWrite(result.summary?.directWebp ? "info" : "warn", "image.upstream.probe.completed", {tested:(result.tests || []).length,mimeTypes:mimes.join(","),directWebp:!!result.summary?.directWebp,directAvif:!!result.summary?.directAvif});
-      $("#image-probe-copy").disabled = false;
-    } catch (error) {
-      status.textContent = error.message || "上游探测失败。";
-      output.textContent = "没有获得完整探测报告。请查看 DEBUG 日志中的 IMAGE_PROBE 错误码。";
-      debugWrite("error", "image.upstream.probe.failed", {message:error.message || error});
-    } finally { button.disabled = false; }
-  }
-  async function copyImageProbeResults() {
-    if (!lastImageProbeResult) { showToast("还没有可复制的探测结果"); return; }
-    const payload = JSON.stringify(lastImageProbeResult, null, 2);
-    try { await navigator.clipboard.writeText(payload); showToast("上游探测结果已复制（不包含签名 URL）"); }
-    catch (_) {
-      const field = document.createElement("textarea"); field.value = payload; field.style.position = "fixed"; field.style.opacity = "0"; document.body.appendChild(field); field.select();
-      try { document.execCommand("copy"); showToast("上游探测结果已复制"); } catch (_) { showToast("复制失败，请手动复制探测结果"); }
-      field.remove();
-    }
-  }
   function openDebugPanel() {
     const dialog = $("#debug-dialog");
     if (!dialog.open) dialog.showModal();
@@ -734,106 +397,6 @@
       button.classList.toggle("active", button.dataset.view === view);
     });
     $("#welcome").hidden = view !== "discover";
-  }
-
-  function formatBytes(value) {
-    const bytes = Number(value) || 0;
-    if (bytes < 1024) return bytes + " B";
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KiB";
-    if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + " MiB";
-    return (bytes / 1024 / 1024 / 1024).toFixed(2) + " GiB";
-  }
-
-  function fillSettingsForm(settings) {
-    const fields = {
-      "preheat-enabled":"preheat_enabled",
-      "preheat-startup":"preheat_on_startup",
-      "preheat-hourly":"preheat_hourly",
-      "preheat-items":"preheat_items",
-      "idle-seconds":"idle_seconds",
-      "image-ram-mib":"image_ram_mib",
-      "image-disk-gib":"image_disk_gib",
-      "image-ram-idle-hours":"image_ram_idle_hours",
-      "image-disk-retention-days":"image_disk_retention_days",
-      "api-ram-mib":"api_ram_mib",
-      "api-max-entries":"api_max_entries"
-    };
-    Object.keys(fields).forEach((id) => {
-      const input = $("#" + id);
-      if (!input) return;
-      const key = fields[id];
-      if (input.type === "checkbox") input.checked = !!settings[key];
-      else input.value = settings[key];
-    });
-  }
-
-  function readSettingsForm() {
-    return {
-      preheat_enabled:$("#preheat-enabled").checked,
-      preheat_on_startup:$("#preheat-startup").checked,
-      preheat_hourly:$("#preheat-hourly").checked,
-      preheat_items:Number($("#preheat-items").value),
-      idle_seconds:Number($("#idle-seconds").value),
-      image_ram_mib:Number($("#image-ram-mib").value),
-      image_disk_gib:Number($("#image-disk-gib").value),
-      image_ram_idle_hours:Number($("#image-ram-idle-hours").value),
-      image_disk_retention_days:Number($("#image-disk-retention-days").value),
-      api_ram_mib:Number($("#api-ram-mib").value),
-      api_max_entries:Number($("#api-max-entries").value)
-    };
-  }
-
-  function renderSettingsLive(data) {
-    const status = data.preheat || {};
-    const cache = data.cache || {};
-    const started = status.started_at ? new Date(status.started_at).toLocaleString() : "尚未运行";
-    const next = status.next_run_at ? new Date(status.next_run_at).toLocaleString() : "等待调度";
-    const preheatText = [
-      "预热状态：" + (status.running ? "运行中 · " + (status.phase || "") + (status.current ? " · " + status.current : "") : (status.phase || "空闲")),
-      "目录 API：" + (status.api_pages || 0) + " 页 · 作品条目 " + (status.items_ready || 0),
-      "封面：" + (status.images_done || 0) + " / " + (status.images_total || 0) + " · 失败 " + (status.images_failed || 0),
-      "API 失败/超时：" + (status.api_failed || 0) + " · 跳过轮次：" + (status.skipped || 0),
-      "上次开始：" + started,
-      "下次计划：" + next,
-      "结果：" + (status.last_result || "等待首次预热"),
-      "",
-      "图片 RAM：" + formatBytes(cache.image_ram_bytes) + " / " + formatBytes(cache.image_ram_limit_bytes) + " · " + (cache.image_ram_entries || 0) + " 张",
-      "图片闪存：" + formatBytes(cache.image_disk_bytes) + " / " + formatBytes(cache.image_disk_limit_bytes) + " · " + (cache.image_disk_entries || 0) + " 张",
-      "API RAM：" + formatBytes(cache.api_bytes) + " · " + (cache.api_entries || 0) + " 条"
-    ];
-    $("#settings-live").textContent = preheatText.join("\n");
-  }
-
-  async function refreshSettings(fillForm) {
-    const data = await request("/api/v1/settings");
-    if (fillForm) fillSettingsForm(data.settings || {});
-    renderSettingsLive(data);
-  }
-
-  async function openSettings() {
-    const dialog = $("#settings-dialog");
-    if (!dialog.open) dialog.showModal();
-    window.clearInterval(settingsRefreshTimer);
-    $("#settings-live").innerHTML =
-      '<div class="deployment-guide">' +
-        '<p class="guide-intro">推荐选择 Pages + GitHub 授权：首次设置一次，之后每次更新代码都会自动部署。无需创建 KV、D1 或 R2。</p>' +
-        '<section class="guide-section"><h3>方案 A · GitHub 授权连接 Pages（推荐）</h3>' +
-          '<ol class="guide-steps">' +
-            '<li>打开 <a href="https://dash.cloudflare.com/" target="_blank" rel="noopener noreferrer">Cloudflare 控制台</a>，进入 <strong>Workers & Pages → Create application → Pages → Connect to Git</strong>。</li>' +
-            '<li>跳转到 GitHub 后，安装并授权 <strong>Cloudflare Workers & Pages</strong> 应用；选择仓库 <code>xiaobei206/beixiaoguo-CF</code>。</li>' +
-            '<li>生产分支选 <code>main</code>；Framework preset 选 <code>None</code>；Build command 填 <code>npm run build</code>；Build output directory 填 <code>public</code>；Root directory 留空。</li>' +
-            '<li>点击部署。完成后访问 Cloudflare 分配的 <code>*.pages.dev</code> 地址；以后推送到 <code>main</code> 会自动更新。</li>' +
-          '</ol></section>' +
-        '<section class="guide-section"><h3>ZIP／文件夹能不能直接拖放？</h3>' +
-          '<p>不建议，也不能作为完整安装方式。控制台的 Direct Upload 拖放不会编译本项目的 <code>functions/</code>；只上传网页文件可能导致主页能打开，但 <code>/api/v1/*</code> 不能运行。想手动发布，请按完整教程从仓库根目录使用 Wrangler。</p></section>' +
-        '<section class="guide-section"><h3>方案 B · Workers（备用）</h3>' +
-          '<p>仓库已经提供独立的 <code>worker.js</code>。从仓库根目录运行 <code>npx wrangler login</code>，再运行 <code>npx wrangler deploy --config wrangler.worker.jsonc</code>；若要 Git 自动部署，在 Workers Builds 中使用 <code>npm run build</code> 作为构建命令，使用 <code>npx --yes wrangler@latest deploy --config wrangler.worker.jsonc</code> 作为部署命令。</p></section>' +
-        '<p class="guide-links"><a href="https://github.com/xiaobei206/beixiaoguo-CF/blob/main/docs/deploy-cloudflare-cn.md" target="_blank" rel="noopener noreferrer">打开完整中文部署教程 ↗</a>' +
-          ' · <a href="https://developers.cloudflare.com/pages/get-started/git-integration/" target="_blank" rel="noopener noreferrer">Pages 官方文档 ↗</a></p>' +
-        '<p class="guide-note">部署验收：<code>/api/v1/health</code> 应返回 <code>status: ok</code>；<code>/api/v1/health?sdk=1</code> 应返回 <code>sdk: ready</code>。这些检查只验证 API/WASM 启动，不代表上游片库和所有视频均已通过测试。</p>' +
-      '</div>';
-    const form = $("#settings-form");
-    if (form) form.hidden = true;
   }
 
   function browserSupportsNativeHeicForUi() {
@@ -1015,7 +578,6 @@
     // Unsupported browsers request original HEIC bytes and convert locally.
     if (requiresClientDecode) {
       if (isAllowedHeicSource(sourceUrl)) {
-        lastFailedCoverUrl = sourceUrl.href;
         enableClientHeicFallback(image, sourceUrl);
       } else {
         replaceBrokenGridImage(image);
@@ -1025,8 +587,8 @@
 
     let imagePath = "";
     try { imagePath = new URL(image.currentSrc || image.src, window.location.origin).pathname; } catch (_) {}
-    if (!imageProbeStarted && imagePath === "/api/v1/images") {
-      imageProbeStarted = true;
+    if (!imageHeadDiagnosticStarted && imagePath === "/api/v1/images") {
+      imageHeadDiagnosticStarted = true;
       const probeUrl = image.currentSrc || image.src;
       fetch(probeUrl, {method:"HEAD",headers:{"X-BXG-Session":playbackClientId}})
         .then((response) => {
@@ -2767,25 +2329,6 @@
     if (document.fullscreenElement) endTemporaryBoost();
   });
   $("#cast-dialog-close").addEventListener("click", () => $("#cast-dialog").close());
-  $("#route-button").addEventListener("click", () => {
-    renderRouteDialog();
-    if (!$("#route-dialog").open) $("#route-dialog").showModal();
-  });
-  $("#route-dialog-close").addEventListener("click", () => $("#route-dialog").close());
-  $("#route-dialog").addEventListener("click", (event) => {
-    if (event.target === $("#route-dialog")) $("#route-dialog").close();
-  });
-  $("#route-list").addEventListener("change", (event) => {
-    const input = event.target;
-    if (input && input.name === "active-route") selectRoute(input.value);
-  });
-  $("#route-list").addEventListener("click", (event) => {
-    const button = event.target.closest("[data-remove-route]");
-    if (button) removeRoute(button.dataset.removeRoute);
-  });
-  $("#route-add-form").addEventListener("submit", addRouteFromForm);
-  $("#route-copy-guide").addEventListener("click", copyRouteRuleGuide);
-  $("#settings-button").addEventListener("click", openSettings);
   $("#debug-log-button").addEventListener("click", openDebugPanel);
   $("#image-probe-button").addEventListener("click", openImageProbePanel);
   $("#image-probe-dialog-close").addEventListener("click", () => $("#image-probe-dialog").close());
@@ -2846,51 +2389,7 @@
       stack:reason && reason.stack ? String(reason.stack).split("\\n").slice(0, 5).join(" | ") : ""
     });
   });
-  $("#settings-close").addEventListener("click", () => {
-    $("#settings-dialog").close();
-    window.clearInterval(settingsRefreshTimer);
-  });
-  $("#settings-dialog").addEventListener("close", () => window.clearInterval(settingsRefreshTimer));
-  $("#settings-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const submit = $("#settings-form button[type='submit']");
-    submit.disabled = true;
-    try {
-      await request("/api/v1/settings", {
-        method:"PUT",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify(readSettingsForm())
-      });
-      await refreshSettings(true);
-      showToast("设置已保存并立即生效");
-    } catch (error) {
-      showToast(error.message || "保存设置失败");
-    } finally {
-      submit.disabled = false;
-    }
-  });
-  $("#preheat-now").addEventListener("click", async () => {
-    const button = $("#preheat-now");
-    button.disabled = true;
-    try {
-      await request("/api/v1/preheat/run", {method:"POST"});
-      showToast("已提交立即预热任务");
-      await refreshSettings();
-    } catch (error) {
-      showToast(error.message || "启动预热失败");
-    } finally {
-      button.disabled = false;
-    }
-  });
   window.addEventListener("pagehide", () => setPlaybackActivity(false));
 
-  const savedRoute = getActiveRoute();
-  if (savedRoute && !usesCloudflareManagedHostname()) {
-    announceActiveRoute(savedRoute.ip, true).finally(() => loadView("discover", false));
-  } else {
-    if (savedRoute && usesCloudflareManagedHostname()) {
-      renderRouteStatus("自选 IP 已保存在本机；当前默认域名不支持动态 Alt-Svc 规则。", "warn");
-    }
-    loadView("discover", false);
-  }
+  loadView("discover", false);
 })();

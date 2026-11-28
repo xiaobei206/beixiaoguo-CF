@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 const required = [
   "public/index.html", "public/assets/app.js", "public/assets/app.css",
   "public/assets/icon-192.png", "public/assets/icon-512.png",
-  "public/manifest.webmanifest", "public/_routes.json", "functions/api/v1/[[path]].js", "functions/image-proxy-options.js", "functions/image-probe.js", "functions/openhongguo-runtime.js", "scripts/patch-openhongguo.mjs", "scripts/build-openhongguo.mjs", "scripts/copy-heic-to.mjs", "scripts/test-image-client-fallback.mjs", "public/assets/vendor/heic-to.js", "public/assets/vendor/heic-to-LICENSE.txt", "wrangler.jsonc", "wrangler.worker.jsonc", "worker.js", "scripts/smoke-worker-runtime.mjs", "scripts/test-media-session.mjs", "scripts/test-image-proxy.mjs", "scripts/test-image-probe.mjs", "scripts/test-route-ip.mjs", "functions/route-ip.js", "functions/cenc-runtime.js", "functions/media-session.js", "edge-cenc/go.mod", "edge-cenc/cenc/layout.go", "edge-cenc/cenc/layout_test.go", "edge-cenc/wasm/main.go", "docs/deploy-cloudflare-cn.md", "VERSION"
+  "public/manifest.webmanifest", "public/_routes.json", "functions/api/v1/[[path]].js", "functions/image-proxy-options.js", "functions/openhongguo-runtime.js", "scripts/patch-openhongguo.mjs", "scripts/build-openhongguo.mjs", "scripts/copy-heic-to.mjs", "scripts/test-image-client-fallback.mjs", "public/assets/vendor/heic-to.js", "public/assets/vendor/heic-to-LICENSE.txt", "wrangler.jsonc", "wrangler.worker.jsonc", "worker.js", "scripts/smoke-worker-runtime.mjs", "scripts/test-media-session.mjs", "scripts/test-image-proxy.mjs", "functions/cenc-runtime.js", "functions/media-session.js", "edge-cenc/go.mod", "edge-cenc/cenc/layout.go", "edge-cenc/cenc/layout_test.go", "edge-cenc/wasm/main.go", "VERSION"
 ];
 for (const file of required) await access(file);
 
@@ -15,9 +15,12 @@ if (js.includes("按需 Range 解密尚未迁移到边缘函数") || js.includes
 if (!js.includes("当前后端返回了受保护标记，但没有返回边缘媒体地址")) throw new Error("播放器必须为缺少边缘媒体地址的旧后端提供明确部署诊断。");
 if (!js.includes("player.media.error") || !js.includes("player.media.stalled") || !js.includes("mediaElementDiagnostics(video)")) throw new Error("Browser media-state diagnostics are missing.");
 if (!js.includes("const EDGE_PREFETCH_COUNT = 6;") || !js.includes("const BROWSER_PRELOAD_COUNT = 3;")) throw new Error("Playback prefetch targets must remain six edge resolutions and three browser videos.");
-if (!js.includes("const MAX_ROUTE_ENTRIES = 24;") || !js.includes("normalizeRouteIPAddress") || !js.includes('/api/v1/route?alt_ip=') || !js.includes("Alt-Svc") || !js.includes(".workers.dev") || !js.includes(".pages.dev")) throw new Error("Browser-local CF IP route selection and platform limitations are missing.");
-if (!html.includes('id="route-dialog"') || !html.includes('id="route-button"') || !html.includes('http.response.headers["x-bxg-alt-ip"][0]') || !styles.includes(".route-option")) throw new Error("The browser route picker UI is missing.");
 const worker = await readFile("functions/api/v1/[[path]].js", "utf8");
+if (html.includes('id="route-button"') || html.includes('id="route-dialog"') || html.includes('id="settings-button"') || html.includes('id="settings-dialog"') || html.includes('id="image-probe-button"') || html.includes('id="image-probe-dialog"')) throw new Error("Retired route, deployment tutorial and image probe UI must stay out of homepage.");
+if (js.includes("beixiaoguo.cf.alt-routes") || js.includes("/api/v1/route?alt_ip=") || js.includes("/api/v1/debug/image-probe") || js.includes("function openSettings") || js.includes("readSettingsForm")) throw new Error("Retired route, image probe and no-op settings UI must not return.");
+if (worker.includes('parts[0] === "route"') || worker.includes('parts[1] === "image-probe"') || worker.includes('parts[0] === "settings"') || worker.includes('parts[0] === "preheat"')) throw new Error("Retired route, probe and no-op settings endpoints must not return.");
+if (styles.includes(".route-option") || styles.includes(".image-probe-dialog") || styles.includes(".deployment-guide") || styles.includes(".settings-button")) throw new Error("Retired route, deployment and probe styles must not return.");
+if (!html.includes('id="debug-log-button"') || !html.includes('id="debug-dialog"') || !js.includes("DEBUG_STORAGE_KEY") || !js.includes("debugBundle()")) throw new Error("DEBUG viewer and diagnostic collection must remain available.");
 if (!worker.includes('parts[0] === "prefetch" && request.method === "POST"') || !worker.includes("episodeIds.length > 6") || !worker.includes("最多预解析 6 集")) throw new Error("Edge playback prefetch must be capped at six episodes.");
 if (!styles.includes(".player-preload-container") || !styles.includes(".bxg-preload-video")) throw new Error("Offscreen browser preloading styles are missing.");
 const manifest = JSON.parse(await readFile("public/manifest.webmanifest", "utf8"));
@@ -28,7 +31,6 @@ if (!js.includes('const APP_VERSION = "' + version + '";')) throw new Error("DEB
 const packageInfo = JSON.parse(await readFile("package.json", "utf8"));
 if (worker.includes("Cloudflare Worker Secrets 中配置 BXG_MEDIA_SECRET")) throw new Error("Secret error still uses the generic Worker-only wording.");
 if (!worker.includes("mediaSecretSetupMessage(runtimeName)") || !worker.includes("Pages 和独立 Worker 的 Secrets 不会自动共享")) throw new Error("Secret error must explain runtime-specific setup and independent environments.");
-if (!worker.includes('parts[0] === "route"') || !worker.includes('request.headers.get("Alt-Used")') || !worker.includes("network.alt-used") || !worker.includes('"X-BXG-Alt-IP":selectedAltIp') || !worker.includes("normalizeRouteIPAddress")) throw new Error("Route endpoint must validate the selected IP and expose it to Zone response transforms.");
 const playStart = worker.indexOf('if (parts[0] === "play" && parts[1]) {');
 const playEnd = worker.indexOf('if (parts[0] === "media" && parts[1])', playStart);
 const playBranch = worker.slice(playStart, playEnd);
@@ -68,19 +70,12 @@ if (!workerWrangler.rules?.some(rule => rule.type === "CompiledWasm" && rule.glo
 if (!html.includes("/assets/app.js?v=" + version)) throw new Error("HTML JS version does not match VERSION");
 if (!html.includes("/assets/app.css?v=" + version)) throw new Error("HTML CSS version does not match VERSION");
 if (!html.includes("Cloudflare 边缘版") || html.includes("家庭局域网") || html.includes("只在你的家庭网络中提供服务")) throw new Error("Cloudflare homepage must not describe the public edge deployment as LAN-only");
-if (!html.includes('aria-label="部署教程"') || !html.includes("Cloudflare 部署教程")) throw new Error("Homepage must expose the Cloudflare deployment guide");
-if (!js.includes("docs/deploy-cloudflare-cn.md") || !js.includes("Connect to Git")) throw new Error("Homepage deployment guide must link to the full tutorial and explain Pages Git setup");
 if (!html.includes('id="debug-log-button"') || !html.includes('id="debug-dialog"') || !html.includes('id="debug-copy"')) throw new Error("Homepage must expose the DEBUG log viewer and copy action");
 if (!js.includes("DEBUG_STORAGE_KEY") || !js.includes("api.response.error") || !js.includes("window.unhandledrejection") || !js.includes("image.url.rejected")) throw new Error("Frontend DEBUG logging must capture API, runtime and image failures");
 if (!worker.includes('parts[0] === "debug" && parts[1] === "logs"') || !worker.includes('debugRecord(session, "debug", "upstream.request"') || !worker.includes('runtimeDiagnostics()')) throw new Error("Edge DEBUG endpoint must expose session-scoped request and WASM diagnostics");
 if (!worker.includes('response.headers.set("X-BXG-Trace-ID", traceId)') || !worker.includes('response.headers.set("X-BXG-Debug", value)')) throw new Error("Every API response must carry its own edge trace, independent of isolate memory");
 if (!worker.includes('async function proxyCoverImage') || !worker.includes('host.endsWith(".fqnovelpic.com")') || !worker.includes('parts[0] === "images"')) throw new Error("FQ Novel poster images must use the restricted Cloudflare proxy");
 const imageProxyOptions = await readFile("functions/image-proxy-options.js", "utf8");
-const imageProbe = await readFile("functions/image-probe.js", "utf8");
-if (!worker.includes('parts[0] === "debug" && parts[1] === "image-probe"') || !worker.includes("probeUpstreamImage")) throw new Error("The dedicated upstream image diagnostic route is missing.");
-if (!html.includes('id="image-probe-button"') || !html.includes('id="image-probe-dialog"') || !html.includes('id="image-probe-run"') || !html.includes('id="image-probe-copy"')) throw new Error("The upstream image probe UI is incomplete.");
-if (!js.includes('/api/v1/debug/image-probe') || !js.includes("lastFailedCoverUrl") || !js.includes("lastImageProbeResult")) throw new Error("The UI must run upstream image probing from the last failed cover without persisting signed URLs.");
-if (!imageProbe.includes('MAX_URL=4096') || !imageProbe.includes('MAX_REDIRECTS=2') || !imageProbe.includes('method:"GET"') || !imageProbe.includes('"x-tos-process"') || !imageProbe.includes('"x-oss-process"')) throw new Error("The upstream image probe must remain bounded and cover documented variants.");
 if (!imageProxyOptions.includes("browserSupportsNativeHeic") || !imageProxyOptions.includes("imageProxyFetchOptions") || imageProxyOptions.includes("imageCacheKeyUrl") || imageProxyOptions.includes("stableImageIdentity")) throw new Error("Image proxy options must forward only original image bytes.");
 if (imageProxyOptions.includes("cf:") || imageProxyOptions.includes('format: "webp"')) throw new Error("The image proxy must never request Cloudflare-side image conversion.");
 if (worker.includes("image.cache.hit") || worker.includes("image.cache.stored") || worker.includes("image.cache.inflight.join") || worker.includes("IMAGE_EDGE_CACHE_TTL_SECONDS") || worker.includes("IMAGE_TRANSFORM_UNAVAILABLE") || worker.includes("image.transform.unavailable") || worker.includes("cf: { image:")) throw new Error("Cloudflare-side HEIC conversion/cache must be removed.");
@@ -104,7 +99,7 @@ if (!js.includes('parsed.protocol !== "https:"')) throw new Error("External cove
 if (js.includes("视频仍由 N1 按需读取与解密") || js.includes("N1 正在按需解密") || js.includes("明文 MP4")) throw new Error("Cloudflare playback UI contains stale N1-only wording");
 if (!js.includes("无需创建 KV")) throw new Error("Cloudflare runtime guide should state that KV is not required");
 
-for (const file of ["scripts/build-openhongguo.mjs", "public/assets/app.js", "functions/api/v1/[[path]].js", "functions/image-proxy-options.js", "functions/image-probe.js", "functions/openhongguo-runtime.js", "scripts/patch-openhongguo.mjs", "scripts/smoke-sdk.mjs", "scripts/smoke-pages-runtime.mjs", "worker.js", "scripts/smoke-worker-runtime.mjs", "functions/cenc-runtime.js", "functions/media-session.js", "scripts/test-media-session.mjs", "scripts/test-image-proxy.mjs", "scripts/test-image-probe.mjs", "scripts/test-image-client-fallback.mjs", "scripts/copy-heic-to.mjs"]) {
+for (const file of ["scripts/build-openhongguo.mjs", "public/assets/app.js", "functions/api/v1/[[path]].js", "functions/image-proxy-options.js", "functions/openhongguo-runtime.js", "scripts/patch-openhongguo.mjs", "scripts/smoke-sdk.mjs", "scripts/smoke-pages-runtime.mjs", "worker.js", "scripts/smoke-worker-runtime.mjs", "functions/cenc-runtime.js", "functions/media-session.js", "scripts/test-media-session.mjs", "scripts/test-image-proxy.mjs", "scripts/test-image-client-fallback.mjs", "scripts/copy-heic-to.mjs"]) {
   const result = spawnSync(process.execPath, ["--check", file], { encoding: "utf8" });
   if (result.status !== 0) throw new Error("Syntax check failed: " + file + "\n" + result.stderr);
 }
