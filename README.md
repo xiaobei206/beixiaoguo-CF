@@ -1,6 +1,6 @@
 # 贝小果 Cloudflare
 
-贝小果的 Cloudflare 轻量化版本。静态网页可部署在 Cloudflare Pages 或 Workers Static Assets，匿名片库请求由边缘函数按需处理，不需要自管 VPS 或数据库。
+贝小果的 Cloudflare 轻量化版本。协作开发前请先阅读 [AGENTS.md](AGENTS.md) 和 [HANDOFF-CN.md](HANDOFF-CN.md)：前者是强制开发规矩，后者记录当前真实进度、CI、部署状态与下一步。静态网页可部署在 Cloudflare Pages 或 Workers Static Assets，匿名片库请求由边缘函数按需处理，不需要自管 VPS 或数据库。
 
 当前开发版本：0.1.18
 

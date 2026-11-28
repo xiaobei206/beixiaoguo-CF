@@ -6,9 +6,11 @@
 - 对必须转换的 HEIC/HEIF 请求（Chrome、iOS 16 Safari 等）只向源站声明 Accept: image/webp，同时继续请求 Cloudflare 输出 WebP；Safari 17+ 原生 HEIC 直出仍保留。这样可避免把 HEIC/AVIF 再次协商到转换链路，但源站仍需启用 WebP 自适应，生产效果必须以部署后的真实回包确认。
 - 代理现在从 Cloudflare 错误响应体提取 4 位错误码；例如 9516 会写入 X-BXG-Transform-Error-Code，不再只显示笼统的 HTTP_422。
 - 回归测试覆盖 iOS 16 Safari 的 WebP 转换路径、转换请求只声明 WebP、Safari 17 原图路径继续保留 HEIC，以及 9516 错误码提取。
-- 本版本修改维护仓库 main；部署 fork 当前与维护仓库同步在 bdf2a735f85ee82d81b88de8f50776b0b8f4541e，后续仍需等待本次代码 CI 与 Worker Builds 完成，再做真实图片 GET 验收。测试不模拟 veImageX 实际自适应设置，不把源站一定返回 WebP 写成已验证事实。
+- 本版本修改维护仓库 main；部署 fork `qmancf206/beixiaoguo-CF` 已同步到同一 SHA `cc94107d0cd0fcd4805234804775f6e3859ff665`。CI Run #46115643235 的 Windows npm test 与 Pages/Workers 构建/WASM smoke test 全部通过。**用户最新反馈：图片仍无法显示。** 当前没有 0.1.18 部署后新的失败 GET 头信息，Cloudflare Worker Build 是否完成也未由连接独立核实；因此本版本尚不能标记为用户问题已修复。下一步必须先核对生产 DEBUG 版本和实际 Worker 部署 SHA，再拿最新失败 GET 的错误码继续定位。测试使用模拟源站，不等同于真实 veImageX 行为验证。
 
 # 贝小果 Cloudflare 开发日志
+
+> 维护规矩：每次改动代码、测试或版本后，必须在同一工作轮次更新 `HANDOFF-CN.md` 和本日志；完整流程见根目录 `AGENTS.md`。
 
 ## 0.1.17 — 2026-11-28
 
