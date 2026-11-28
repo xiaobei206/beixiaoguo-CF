@@ -7,7 +7,7 @@ const [api,app,html,packageText,copyScript,license,options]=await Promise.all([
  readFile("functions/image-proxy-options.js","utf8")
 ]);
 const pkg=JSON.parse(packageText),bundle=await stat("public/assets/vendor/heic-to.js");
-assert.equal(pkg.version,"0.1.21");assert.equal(pkg.devDependencies?.["heic-to"],"1.6.7");assert.ok(bundle.size>100000);
+assert.equal(pkg.version,"0.1.22");assert.equal(pkg.devDependencies?.["heic-to"],"1.6.7");assert.ok(bundle.size>100000);
 assert.match(license,/GNU LESSER GENERAL PUBLIC LICENSE[\s\S]*Version 3/i);
 assert.match(copyScript,/dist\/iife\/heic-to\.js/);assert.match(copyScript,/heic-to-LICENSE\.txt/);
 assert.match(api,/url\.searchParams\.get\("mode"\) === "source"/);assert.match(api,/sourceOnly && \(method !== "GET" \|\| !isHeicImageUrl\(target\)\)/);
@@ -18,6 +18,6 @@ for(const event of ["started","success","failed","display-failed"])assert.ok(app
 assert.doesNotMatch(app,/HEIC_PENDING_PIXEL|image\.src\s*=\s*HEIC_PENDING_PIXEL/);
 assert.doesNotMatch(app,/image\.heic\.transform\.display-failed|client-heic-conversion-fallback/);
 assert.doesNotMatch(options,/cf\s*:\s*\{\s*image\s*:/);assert.match(options,/image\/heic/);
-assert.match(html,/app\.js\?v=0\.1\.21/);assert.match(html,/app\.css\?v=0\.1\.21/);
+assert.match(html,/app\.js\?v=0\.1\.22/);assert.match(html,/app\.css\?v=0\.1\.22/);
 assert.ok(!app.includes("cdn.jsdelivr.net/npm/heic-to"));
 console.log("Browser-local HEIC conversion and IMG lifecycle regression checks passed.");
