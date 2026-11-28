@@ -4,7 +4,7 @@
 
 > **当前主线：0.1.18 修正 HEIC 源站格式协商，并保留 Cloudflare 解码错误码。** 用户真实生产请求返回 503；DEBUG 显示 Cloudflare 转换服务 HTTP 422、内部错误 **9516**，明确为 HEIC 解码失败，不是 9422 额度耗尽。iOS 16 Safari 与 Chromium 都不支持原生 HEIC，必须通过 WebP 显示。排查发现原请求 Accept 同时声明 HEIC/AVIF/WebP，而 veImageX 自适应优先级为 HEIC > AVIF > WebP；0.1.18 对需要转换的请求仅声明 image/webp，避免源站优先回传 HEIC，并把响应体内的 9516 透传到诊断头。Safari 17+ 原生 HEIC 路径保持不变。**注意：veImageX 必须启用 WebP 自适应，才能在 Accept 仅有 image/webp 时返回 WebP；此行为尚须部署后用真实 GET 验证，不能提前宣称已修复线上图片。**
 >
-> **Cloudflare 来源白名单评审结论：** 官方文档说明 Images source allowlist 只作用于 /cdn-cgi/image/ URL 转换，不作用于 Worker fetch() 子请求上的 cf.image。当前项目用的是后一种方式，因此不需要在 Dashboard 为 p3-reading-sign.fqnovelpic.com 增加 Images source allowlist；不要为此开启 Any origin。Cache API 只在单个 Cloudflare 数据中心本地生效，可能因 PoP 变化或缓存淘汰再次转换。最新代码/测试提交 1983cdff 的 CI Run #46113661994 已全部通过；生产 fork 尚未同步，不能声称线上修复已生效。
+> **Cloudflare 来源白名单评审结论：** 官方文档说明 Images source allowlist 只作用于 /cdn-cgi/image/ URL 转换，不作用于 Worker fetch() 子请求上的 cf.image。当前项目用的是后一种方式，因此不需要在 Dashboard 为 p3-reading-sign.fqnovelpic.com 增加 Images source allowlist；不要为此开启 Any origin。Cache API 只在单个 Cloudflare 数据中心本地生效，可能因 PoP 变化或缓存淘汰再次转换。0.1.17 的代码/测试 CI Run #46113661994 已通过；0.1.18 的源站格式协商修复提交 a9340b6 / 回归测试提交 61e6dc2 正在执行 CI，部署 fork 仍停留在 bdf2a735，尚未包含 0.1.18。
 
 ### 1. 已证实的故障现象
 
@@ -21,8 +21,8 @@
 
 ### 2. 仓库与代码状态
 
-- 维护仓库：`xiaobei206/beixiaoguo-CF`，以 `main` 为开发基线；HEIC 转换失败语义修复为 `5f16ffe`，测试隔离为 `19b27e3`，本次重定向格式边界与补充回归测试为 `1983cdff0220fcda4d468bfcfe1cfb758d5512dd`；该代码/测试提交的 CI Run #46113661994 已通过。
-- 部署 fork：`qmancf206/beixiaoguo-CF`，main 当前为 `67be60176b8cc706c85bc719a3668f3835712c1b`。比较确认，代码/测试提交 `1983cdff` 相对 fork 领先 6 个提交、落后 0 个；无 fork 独有提交，适合直接快进同步。维护仓库的后续文档提交也需一并同步。本轮未修改生产 fork。
+- 维护仓库：`xiaobei206/beixiaoguo-CF`，以 `main` 为开发基线；0.1.17 HEIC 转换失败语义和重定向修复提交为 `1983cdff`；0.1.18 协商代码提交为 `a9340b6`，补充 9516 回归测试提交为 `61e6dc2`，当前 CI Run #46115589092 正在执行。
+- 部署 fork：`qmancf206/beixiaoguo-CF`，main 当前为 `bdf2a735f85ee82d81b88de8f50776b0b8f4541e`，已与维护仓库同步到 0.1.17。0.1.18 尚未同步；维护仓库 GitHub 连接对部署 fork 只有 pull=true、push=false，待 CI 通过后由有权限的账号执行 Sync fork → Update branch。
 - Wrangler Worker 配置：`wrangler.worker.jsonc`；Worker 名称 `beixiaoguo-cf-worker`，入口 `worker.js`。
 - `worker.js` 会把 Worker 的 `env` 原样传给 `functions/api/v1/[[path]].js`。播放逻辑读取 `context.env?.BXG_MEDIA_SECRET`；名称与调用代码一致。现有配置文件未声明同名普通变量。
 - 0.1.14 补上了直接播放分支的诊断事件 `media.secret.missing`，仅记录 bool 状态，不记录密钥值。部署提交链接：
