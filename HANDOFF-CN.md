@@ -4,7 +4,7 @@
 
 > **当前主线：0.1.18 已进入维护仓库和部署 fork，CI 已通过，但封面故障仍未解决。** 用户最新明确反馈：更新后图片仍然无法显示。此前真实失败 GET 返回 503 `IMAGE_TRANSFORM_UNAVAILABLE`；Worker DEBUG 显示 Cloudflare 转换服务 HTTP 422、内部错误 **9516**，即 HEIC 解码失败，不是 9422 免费额度耗尽。iPhone 13 / iOS 16 Safari 与 Chromium 都需要 WebP，Safari 17+ 才走原生 HEIC。0.1.18 已把需要转换的请求发往源站时的 `Accept` 限定为 `image/webp`，并把响应体里的 `9516` 提取到诊断头。**但用户反馈仍不行，不能认定该改动有效；下一位 GPT 必须先检查 Cloudflare 实际运行版本，再取得 0.1.18 部署后的新失败 GET 响应，按真实错误继续排查。**
 >
-> **Cloudflare 来源白名单评审结论：** Images source allowlist 适用于 `/cdn-cgi/image/` URL 转换，不适用于 Worker `fetch()` 子请求中的 `cf.image`；当前方案不需要为 `p3-reading-sign.fqnovelpic.com` 增加来源白名单，更不要开启 Any origin。0.1.18 最终代码与交接提交 `cc94107d0cd0fcd4805234804775f6e3859ff665` 已通过 CI Run [#46115643235](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46115643235)，Windows 测试和 Pages/Workers 构建与 WASM smoke test 均成功。维护仓库和部署 fork 的 `main` 已核对为同一 SHA `cc94107d0cd0fcd4805234804775f6e3859ff665`。**但 GitHub fork 同步和 CI 成功不能证明 Cloudflare Worker Build 已完成，也不能证明图片已恢复。**
+> **Cloudflare 来源白名单评审结论：** Images source allowlist 适用于 `/cdn-cgi/image/` URL 转换，不适用于 Worker `fetch()` 子请求中的 `cf.image`；当前方案不需要为 `p3-reading-sign.fqnovelpic.com` 增加来源白名单，更不要开启 Any origin。0.1.18 代码基线提交 `cc94107d0cd0fcd4805234804775f6e3859ff665` 已通过 CI Run [#46115643235](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46115643235)，Windows 测试和 Pages/Workers 构建与 WASM smoke test 均成功。部署 fork `main` 已同步到该代码基线；维护仓库 `main` 另有本轮交接/规矩文档提交，具体分支 tip 必须在新会话现场核对。**GitHub fork 同步和 CI 成功不能证明 Cloudflare Worker Build 已完成，也不能证明图片已恢复。**
 
 ### 1. 已证实的故障现象
 
@@ -17,7 +17,7 @@
 - 0.1.18 变更：对于需要 WebP 的 HEIC/HEIF 请求，源站 Accept 限定为 `image/webp`；错误体中的 4 位 Cloudflare 错误码（如 9516）会写入 `X-BXG-Transform-Error-Code`。这只是协商方向的尝试，依赖源站对 `Accept: image/webp` 的实际支持，尚无证据证明 veImageX 对该模板会返回 WebP。用户报告修订后依然无法显示；必须取得最新线上响应才能判断该尝试是未部署、被源站忽略，还是 Cloudflare 解码器仍不兼容。
 - 0.1.15 的初始方案仅按 .heic/.heif 后缀直接转换；0.1.16 加入 Safari 分流、稳定缓存、签名参数规范化及同 isolate 并发合并；0.1.17 修正转换失败语义，并在 proxyCoverImage() 函数级测试中覆盖重定向目标格式变化。测试直接提取生产函数并注入模拟 fetch/Cache API，不覆盖完整 onRequest 路由分发。
 - Cloudflare Images Free 当前每月包含 5,000 个不同转换组合；超出后新转换返回错误而不会对 Free 用量继续收费；Paid 计划超过包含额度后，每 1,000 个额外唯一转换计费 0.50 美元。转换只用于 HEIC／HEIF 来源，需留意生产回包是否成功及账号实际计划。
-- 0.1.17 初始修复提交 5f16ffe 经测试隔离提交 19b27e3 后，CI Run #46111794538 已全部通过；随后重定向边界与失败路径测试提交 1983cdff 的 CI Run #46113661994 也已全部通过（Windows npm test、Linux/静态检查、Pages/Workers 构建及 WASM 运行时 smoke test）。维护仓库修复尚未同步到生产部署 fork，不能声称线上修复已生效。
+- 0.1.17 历史验证：初始修复提交 5f16ffe 经测试隔离提交 19b27e3 后，CI Run #46111794538 已全部通过；重定向边界与失败路径测试提交 1983cdff 的 CI Run #46113661994 也全部通过。**这是 0.1.17 当时的发布状态，不代表当前 0.1.18 尚未同步；当前 fork 状态见第 2 节。**
 
 ### 2. 仓库与代码状态
 
@@ -47,7 +47,7 @@
 - 用户已提供 Windows VPS 首次 `npm.cmd test` 失败日志。已定位并修复：Windows 文件权限测试错误地断言 POSIX `0600`；生成文件比较没有归一化 CRLF/LF；POSIX Shell 假播放器测试不能在 Windows 执行；`scripts/patch-openhongguo.mjs` 对 SDK 文件的精确字符串匹配未处理 CRLF。
 - 修复已在用户自有 `xiaobei206/openhongguo` 的 main（SDK commit `dc453a4691f2d7e29b4c07c3385fab0bf00016e1`）与维护仓库 `xiaobei206/beixiaoguo-CF` 的 main（`6f9bfeed24aad316a4d78363d30b779685da3d46`）。Windows 上只跳过依赖 POSIX Shell 的模拟子进程测试；同一测试仍在 Linux CI 完整执行。其余 Go 单测、CENC 测试、WASM 构建和项目 smoke tests 均保留。
 - GitHub Actions Run #162（`https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46043726448`）已成功：`windows-latest` 的 `npm test` 通过；Ubuntu 的 `npm test`、Pages Functions 构建与 WASM smoke test、Workers 构建与 WASM smoke test 全部通过。
-- GitHub Actions 的 Windows／Linux CI #162 已通过；用户的 Windows VPS 在更新到维护仓库 67be601 后也已完整执行 npm.cmd test 并全部通过。随后生产 BXG_MEDIA_SECRET 已由 Wrangler 配置，真实受保护视频已开始播放；0.1.16 完整 CI Run #46108337627 已通过；0.1.17 初始修复 CI Run #46111794538 已通过；重定向边界和新增失败路径测试所在提交 1983cdff 的 Run #46113661994 已完整通过 Windows npm test、Linux npm test、Pages Functions 构建与 WASM smoke test、Workers 构建与 WASM smoke test。生产 fork 仍停留在 67be601，尚未同步。
+- GitHub Actions 的 Windows／Linux CI #162 已通过；用户的 Windows VPS 在历史版本 67be601 时曾完整执行 `npm.cmd test` 并通过。随后生产 `BXG_MEDIA_SECRET` 已由 Wrangler 配置，真实受保护视频已开始播放；0.1.16、0.1.17 与 0.1.18 的 CI 均有成功记录。**本段中的 67be601 是历史测试基线，不是当前部署 fork SHA；当前代码基线为 cc94107。**
 
 ### 4. Windows VPS 图片修复验证（需要在本机重跑时）
 
