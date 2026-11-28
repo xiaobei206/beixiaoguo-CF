@@ -1,40 +1,34 @@
 # 贝小果 Cloudflare 交接索引
 
-### 0.1.18 线上状态复核（2026-11-28 16:30，Asia/Tokyo；未修改应用代码）
+### 0.1.19 上游图片探测 DEBUG 专版（2026-11-28）
 
-- **维护仓库状态时间点：** 本轮复核开始时 `main` 为 `d161be8540c25364c7453236c89827882d7be5ec`，这是仅修正文档的提交，CI Run [#46116623484](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46116623484) 已成功。随后本轮把两份维护文档一并更新到提交 `3a4aae3de256d2c13365d3e02a29baa2f250a5d3`；该文档提交触发的 CI Run [#46126086700](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46126086700) 在最后一次检查时为 `in_progress`。这是文档状态同步，不包含应用代码改动；应用版本仍是 `0.1.18`。
-- **部署 fork** `qmancf206/beixiaoguo-CF` 的 `main` 为 `cc94107d0cd0fcd4805234804775f6e3859ff665`，包含 0.1.18 代码及测试。GitHub 的 Cloudflare Workers and Pages Check Suite [#124755836973](https://api.github.com/repos/qmancf206/beixiaoguo-CF/check-suites/124755836973) 对该 SHA 报告 `completed / success`，变化区间为 `bdf2a735f85ee82d81b88de8f50776b0b8f4541e → cc94107d0cd0fcd4805234804775f6e3859ff665`。这证明 Cloudflare 集成对该提交报告部署检查成功；但本轮仍未拿到生产域名的实时健康接口回包，故**尚不能用浏览器实际响应确认 `w.hiu.us.kg` 当前返回的运行时版本**。
-- **封面故障没有新证据闭环。** 仍缺少 0.1.18 部署后的最新失败图片 `GET /api/v1/images?...` 的状态、响应体与诊断头；上一份 0.1.17 的 `9516` 只说明旧请求解码 HEIC 失败，不能代替本次 GET。没有因此修改任何代码、测试、配置或版本，也没有把问题标记为已修复。
-- **接下来唯一有效动作：** 在生产网站打开 `/api/v1/health`，确认 JSON 的 `version` 是否为 `0.1.18`；然后在 DevTools → Network 中选最新失败的图片 **GET（不要用 HEAD）**，提供 HTTP 状态、响应 JSON/正文、`Content-Type`、`X-BXG-Error-Code`、`X-BXG-Transform-Error-Code`、`X-BXG-Image-Cache`、`X-BXG-Image-Transform`、`X-BXG-Trace-ID`，必要时附 `X-BXG-Debug`。不要粘贴完整签名 URL 或其中的 `x-expires`、`x-signature`。有了这份真实回包后再选择一个可证伪假设做最小修复。
+- **生产真实证据：** 0.1.18 的封面 GET 返回 503 `IMAGE_TRANSFORM_UNAVAILABLE`，`X-BXG-Transform-Error-Code: 9516`，`X-BXG-Image-Cache: MISS`，`X-BXG-Image-Transform: unavailable`；trace `d8b61985-9bb0-4869-aed5-df8e2cac841b` 显示 Cloudflare 转换 HTTP 422，并明确为 HEIC 解码失败。
+- **新版本代码：** 维护仓库提交 `31bf7de998402c1bede170e8aff0f55e8274b468`，版本 0.1.19；CI Run [#46127619086](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46127619086) 在本轮记录时正在执行。部署 fork 仍为 0.1.18 的 `cc94107d0cd0fcd4805234804775f6e3859ff665`；0.1.19 尚未部署。
+- **诊断设计：** 主页增加“上游探测”按钮和独立弹窗，失败的原始 HEIC/HEIF URL 只暂存在页面内存中；后端用不带 `cf.image` 的普通 Worker GET 对同一 URL 测 7 组 Accept（WebP、AVIF、HEIC、JPEG/PNG、浏览器常见、全格式优先序、不显式设置），另测 .webp/.avif/.jpeg 路径变体和历史 `x-tos-process`/`x-oss-process` 参数。正常封面链路不变。
+- **安全和判读：** 只允许 HTTPS `*.fqnovelpic.com`，手动跟随最多 2 次且重定向仍须在此域；最多 3 路并发、每项 5 秒、每会话 30 秒限一次；成功图片只读响应头后取消 body，错误文本限 512 字节；结果不会回显完整 URL、签名或 expiry。修改过 URL 的变体可能因签名校验返回 403，不能当作该格式不受支持。
+- **接下来：** 等 CI Run #181 完成。通过后才同步部署 fork；验证生产健康接口为 0.1.19，点击“上游探测”并把结果报告带回。先以真实结果判断是否可直出 WebP/AVIF/JPEG，再决定后续是否改正式图片请求。当前不能说封面已经恢复。
 
 ## 当前排障交接（2026-11-28；新对话请先读）
 
-> **当前主线：0.1.18 已进入维护仓库和部署 fork，CI 已通过，但封面故障仍未解决。** 用户最新明确反馈：更新后图片仍然无法显示。此前真实失败 GET 返回 503 `IMAGE_TRANSFORM_UNAVAILABLE`；Worker DEBUG 显示 Cloudflare 转换服务 HTTP 422、内部错误 **9516**，即 HEIC 解码失败，不是 9422 免费额度耗尽。iPhone 13 / iOS 16 Safari 与 Chromium 都需要 WebP，Safari 17+ 才走原生 HEIC。0.1.18 已把需要转换的请求发往源站时的 `Accept` 限定为 `image/webp`，并把响应体里的 `9516` 提取到诊断头。**但用户反馈仍不行，不能认定该改动有效；下一位 GPT 必须先检查 Cloudflare 实际运行版本，再取得 0.1.18 部署后的新失败 GET 响应，按真实错误继续排查。**
->
-> **Cloudflare 来源白名单评审结论：** Images source allowlist 适用于 `/cdn-cgi/image/` URL 转换，不适用于 Worker `fetch()` 子请求中的 `cf.image`；当前方案不需要为 `p3-reading-sign.fqnovelpic.com` 增加来源白名单，更不要开启 Any origin。0.1.18 代码基线提交 `cc94107d0cd0fcd4805234804775f6e3859ff665` 已通过 CI Run [#46115643235](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46115643235)，Windows 测试和 Pages/Workers 构建与 WASM smoke test 均成功。部署 fork `main` 已同步到该代码基线；部署 fork `main` 当前为 `cc94107d0cd0fcd4805234804775f6e3859ff665`；Cloudflare Workers and Pages Check Suite [#124755836973](https://api.github.com/repos/qmancf206/beixiaoguo-CF/check-suites/124755836973) 对该 SHA 报告 `completed / success`。维护仓库 `main` 目前为仅修改交接文档的 `d161be8540c25364c7453236c89827882d7be5ec`，对应 CI Run [#46116623484](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46116623484) 已成功。Cloudflare 集成部署检查已成功，但生产域名的实时 `/api/v1/health` 回包与 0.1.18 后最新失败图片 GET 仍未取得，不能声称实际路由已验收或封面已修复。
+> **当前主线：0.1.19 上游图片探测诊断版已提交维护仓库，但尚未通过 CI 或部署。** 用户最新真实生产 GET 确认应用运行 0.1.18，图片代理返回 503 `IMAGE_TRANSFORM_UNAVAILABLE`；诊断头 `X-BXG-Transform-Error-Code: 9516`，边缘 trace `d8b61985-9bb0-4869-aed5-df8e2cac841b` 的事件说明 Cloudflare 图片转换 HTTP 422，错误正文明确为 HEIC 解码失败。此问题未解决；0.1.19 不改正式图片代理，只添加独立探测工具。
+
+> **Cloudflare 来源白名单结论保持不变：** Images source allowlist 针对 `/cdn-cgi/image/` URL 转换，不适用于 Worker `fetch()` 子请求上的 `cf.image`。不要为了这个故障新增来源白名单或开放 Any origin。VeImageX 格式自适应优先级为 HEIC > AVIF > WebP；官方文档也存在模板输出格式、旧式 `x-tos-process` / `x-oss-process` 图片处理参数。它们是待探测线索，并不证明当前签名模板支持改写。
 
 ### 1. 已证实的故障现象
 
-- 生产地址：https://w.hiu.us.kg/。
-- 生产 Worker：beixiaoguo-cf-worker；Cloudflare Wrangler 已登录账号 qmancf206@gmail.com，Account ID 为 1ae982074154b7e96337455ee8bacc36。
-- BXG_MEDIA_SECRET 已通过本机生成的强随机值并用 Wrangler 写入生产 Worker。密钥值没有写入 Git；不要轮换或复制到日志中。
-- 用户最新真实播放诊断已确认：GET /api/v1/play/:episodeId 返回 200，出现 edge.playback.cenc.session.ready、player.media.metadata（时长约 97.97 秒）和 player.media.playing。边缘预取 6/6 成功，3 集边缘缓存成功、0 失败，另外 3 集已排入后台缓存。
-- 用户在 2026-11-28 提供了维护仓库/生产版本 0.1.17 的真实失败 GET：Worker 返回 503 IMAGE_TRANSFORM_UNAVAILABLE；DEBUG 内部 Cloudflare 转换请求为 HTTP 422、Content-Type text/plain、ERROR 9516，错误内容明确为“Error while decoding the HEIC file”。缓存为 MISS；不是 9422 额度错误。该请求实际解码到 HEIC，但当前日志不包含变换前源站 Content-Type，尚不能证明 HEIC 是由固定 URL 格式还是 veImageX Accept 自适应选择。
-- 用户补充 iPhone 13 / iOS 16 Safari 也无法显示封面：Safari 16 不支持网页原生 HEIC，只有 Safari 17 起才加入该能力。因此 iOS 16 与 Chrome 都必须走 WebP 转换，不能把 iOS 16 放入原图直出分支。
-- 0.1.18 变更：对于需要 WebP 的 HEIC/HEIF 请求，源站 Accept 限定为 `image/webp`；错误体中的 4 位 Cloudflare 错误码（如 9516）会写入 `X-BXG-Transform-Error-Code`。这只是协商方向的尝试，依赖源站对 `Accept: image/webp` 的实际支持，尚无证据证明 veImageX 对该模板会返回 WebP。用户报告修订后依然无法显示；必须取得最新线上响应才能判断该尝试是未部署、被源站忽略，还是 Cloudflare 解码器仍不兼容。
-- 0.1.15 的初始方案仅按 .heic/.heif 后缀直接转换；0.1.16 加入 Safari 分流、稳定缓存、签名参数规范化及同 isolate 并发合并；0.1.17 修正转换失败语义，并在 proxyCoverImage() 函数级测试中覆盖重定向目标格式变化。测试直接提取生产函数并注入模拟 fetch/Cache API，不覆盖完整 onRequest 路由分发。
-- Cloudflare Images Free 当前每月包含 5,000 个不同转换组合；超出后新转换返回错误而不会对 Free 用量继续收费；Paid 计划超过包含额度后，每 1,000 个额外唯一转换计费 0.50 美元。转换只用于 HEIC／HEIF 来源，需留意生产回包是否成功及账号实际计划。
-- 0.1.17 历史验证：初始修复提交 5f16ffe 经测试隔离提交 19b27e3 后，CI Run #46111794538 已全部通过；重定向边界与失败路径测试提交 1983cdff 的 CI Run #46113661994 也全部通过。**这是 0.1.17 当时的发布状态，不代表当前 0.1.18 尚未同步；当前 fork 状态见第 2 节。**
+- 生产地址：`https://w.hiu.us.kg/`；用户本次提供的 DEBUG 显示页面/应用版本 `0.1.18`，因此生产路由实际返回了 0.1.18。
+- 用户最新失败 GET：HTTP 503；`X-BXG-Error-Code: IMAGE_TRANSFORM_UNAVAILABLE`；`X-BXG-Image-Cache: MISS`；`X-BXG-Image-Transform: unavailable`；`X-BXG-Transform-Error-Code: 9516`。trace 为 `d8b61985-9bb0-4869-aed5-df8e2cac841b`。
+- `X-BXG-Debug` 事件顺序：`image.cache.miss`（format=`webp`）→ `image.transform.unavailable`（上游转换 HTTP 422、`text/plain`、错误码 `9516`）。错误文本明确为 `Error while decoding the HEIC file`，不是 9422 额度耗尽。
+- 原始图片在 `p3-reading-sign.fqnovelpic.com`，路径使用 `~tplv-...:400:0.heic` 模板模式，签名/过期参数必须保密。只在浏览器内存中临时留存用于主动探测，不得写入日志、源码、交接文档或提交内容。
+- 0.1.18 的源站 Accept 尝试未解决问题。下一步不再改正式代理；先运行 0.1.19 探针，比较同一 URL 的不同 Accept 返回格式，再把修改路径后缀和历史查询参数变体作为独立实验。改写后的 403/签名错误不能视为格式不支持。
 
 ### 2. 仓库与代码状态
 
-- 维护仓库：`xiaobei206/beixiaoguo-CF`，以 `main` 为开发基线；0.1.18 协商代码提交 `a9340b6`，iOS 16 / Accept 断言与 9516 回归测试提交 `61e6dc2`。0.1.18 代码基线 CI Run [#46115643235](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46115643235) 成功。本轮开始时已核实的文档状态提交 `d161be8540c25364c7453236c89827882d7be5ec` 的 CI Run [#46116623484](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46116623484) 也成功；随后文档状态同步提交 `3a4aae3de256d2c13365d3e02a29baa2f250a5d3` 触发 CI Run [#46126086700](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46126086700)，最后一次核实时正在执行。当前 0.1.18 应用代码基线未改变。
-- 部署 fork：`qmancf206/beixiaoguo-CF` 的 `main` 为 `cc94107d0cd0fcd4805234804775f6e3859ff665`，包含 0.1.18，与维护仓库当前 `main` 的 SHA 不同仅因为维护仓库有后续文档提交。Cloudflare Workers and Pages Check Suite [#124755836973](https://api.github.com/repos/qmancf206/beixiaoguo-CF/check-suites/124755836973) 对 fork 的该 SHA 报告 `completed / success`；这是 Cloudflare 集成层的部署成功记录。**仍需用生产 `GET /api/v1/health` 直接确认 `w.hiu.us.kg` 当前返回的运行时版本，并取得 0.1.18 部署后的失败图片 GET；封面问题仍未解决。** 当前连接对部署 fork 只有 pull=true、push=false。
-- Wrangler Worker 配置：`wrangler.worker.jsonc`；Worker 名称 `beixiaoguo-cf-worker`，入口 `worker.js`。
-- `worker.js` 会把 Worker 的 `env` 原样传给 `functions/api/v1/[[path]].js`。播放逻辑读取 `context.env?.BXG_MEDIA_SECRET`；名称与调用代码一致。现有配置文件未声明同名普通变量。
-- 0.1.14 补上了直接播放分支的诊断事件 `media.secret.missing`，仅记录 bool 状态，不记录密钥值。部署提交链接：
-  `https://github.com/qmancf206/beixiaoguo-CF/commit/67be60176b8cc706c85bc719a3668f3835712c1b`
-- 当前 GitHub 连接对维护仓库有写权限，但对部署 fork 只有 pull=true、push=false，不能代为写入或合并生产分支。CI 通过后，需由有 fork 写权限的账号在 qmancf206/beixiaoguo-CF 的 GitHub 页面选择 Sync fork → Update branch；这是快进同步，不需要强推。
+- 维护仓库：`xiaobei206/beixiaoguo-CF`，`main` 代码提交 `31bf7de998402c1bede170e8aff0f55e8274b468`，版本 `0.1.19`；CI Run [#46127619086](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46127619086) 在本轮交接更新时仍为 `in_progress`。Run 必须完成并通过后才能同步部署。
+- 部署 fork：`qmancf206/beixiaoguo-CF` 的 `main` 仍为 `cc94107d0cd0fcd4805234804775f6e3859ff665`，仅包含 0.1.18；Cloudflare 对该旧 SHA 的检查套件 [#124755836973](https://api.github.com/repos/qmancf206/beixiaoguo-CF/check-suites/124755836973) 曾报告成功，不能当成 0.1.19 已部署。
+- 本次提交新增 `functions/image-probe.js`、`scripts/test-image-probe.mjs`、`POST /api/v1/debug/image-probe`、主页“上游探测”按钮和独立弹窗。正常的 `proxyCoverImage()` 正式图片请求流程没有改变。
+- 探针限制：只接受 HTTPS `*.fqnovelpic.com`、无端口/凭据且 HEIC/HEIF 后缀的 URL；12 组 GET、最多 3 路并发、单项 5 秒、最多跟随 2 次同图片域重定向；每会话 30 秒一次；只读取响应头/Content-Length 和最多 512 字节错误文本；报告不含完整 URL、签名、过期值。改写路径/查询参数的实验可能被签名校验拒绝。
+- 仓库连接没有部署 fork 的写权限。CI 通过之后由有权限的账号在部署 fork 执行 Sync fork → Update branch，再确认 Worker Build 成功及生产 `GET /api/v1/health` 返回 `0.1.19`；最后在生产主页运行探测、复制报告。未经这些步骤不得宣布已部署/已修复。
 
 ### 3. 用户 Windows VPS 环境（已实测）
 
@@ -82,24 +76,23 @@ npm.cmd test
 
 维护仓库 main 的 Windows 与 Linux CI 均已通过。VPS 本地快进到维护仓库 main 后，重新执行一次 `npm.cmd test`，确认用户机器也通过。不要升级 npm（10.9.9 足够）、重装 Node/Go/Git、重新克隆或把整份长日志复制出来；若失败，只需提供最后一个真实错误及其前后约 30 行。
 
-### 5. 当前未解决：0.1.18 部署后仍有封面破图
+### 5. 当前未解决：等待 0.1.19 上游探测结果
 
-**用户最新反馈：还是不行。** 目前未收到这次反馈对应的最新 Network 请求详情，因此不能判定是 Cloudflare Worker 没部署、源站忽略 WebP Accept，还是 Cloudflare 仍无法转换该 HEIC。
+用户已提供最新 0.1.18 生产失败 GET；错误码 9516 与 HEIC 解码失败已经确认。0.1.19 是独立诊断工具版，尚未通过本轮 CI/同步部署，不能把源码测试结果当成实际源站验证。
 
-下一位 GPT 必须按顺序完成：
+运行步骤：
 
-1. 已核实部署 fork `main` 为 `cc94107d0cd0fcd4805234804775f6e3859ff665`，且 Cloudflare Workers and Pages Check Suite [#124755836973](https://api.github.com/repos/qmancf206/beixiaoguo-CF/check-suites/124755836973) 对该 SHA 报告成功。接下来仍要先访问生产 `GET /api/v1/health`，直接确认返回 JSON 中 `version` 为 `0.1.18`；部署检查不能取代对当前域名路由的实时取样。若返回版本不是 0.1.18，先排查 Worker Build/路由/缓存，不要改图片代码。
-2. 在 Chrome F12 → Network → `images` 过滤器中选一条失败的 `/api/v1/images?...` **GET**（不是 HEAD），记录 HTTP Status、Response JSON、`Content-Type`、`X-BXG-Error-Code`、`X-BXG-Transform-Error-Code`、`X-BXG-Image-Cache`、`X-BXG-Image-Transform`、`X-BXG-Trace-ID`。不要分享完整签名 URL（含 `x-expires`、`x-signature`）。最好同时提供一条成功与一条失败请求用于对照。
-3. 对照解释：
-   - `200 image/webp` 且 `X-BXG-Image-Transform: webp`：后端已输出可显示格式；若页面仍破图，转查浏览器缓存、前端 `<img>` URL/解码与 CSP 等，不要继续折腾转换端。
-   - `503` 且 `X-BXG-Transform-Error-Code: 9516`：Cloudflare 仍在解码 HEIC 时失败；`Accept: image/webp` 没让源站给出可转换格式，需独立验证源站原始 GET/HEAD 的真实 Content-Type，并检查该 `~tplv-...:400:0.heic` 路径/模板是否强制 HEIC。下一步优先探索上游允许的 WebP/JPEG 输出模板/参数或直接从另一个原始格式端点取图；不要继续重复设置相同 Accept 或不断调 Cloudflare 白名单/额度。
-   - `503 HTTP_422` 但没有 `9516`：先解码 `X-BXG-Debug` 的 `responseDetail`，确认新的 Cloudflare 转换错误码，再决定方向。
-   - `502 IMAGE_UPSTREAM_HTTP`、`IMAGE_UPSTREAM_FETCH`、`IMAGE_REDIRECT_HOST`、`IMAGE_CONTENT_TYPE` 或 `413 IMAGE_TOO_LARGE`：按对应上游状态、重定向和 MIME/尺寸限制排查，不要把它们统称为 HEIC 解码故障。
-   - `X-BXG-Image-Cache: HIT`：确认缓存对象是否为 `image/webp`；PoP 间 Cache API 不共享，换 PoP 仍可能重新转换。
-4. Safari 17+ 可原生显示 HEIC 的优化路径应继续保留；iOS 16 Safari 与 Chromium 必须得到 JPEG/WebP。普通 JPEG/PNG/WebP 封面必须做回归检查。
-5. 不要在没有新响应证据时继续增加 fallback/重复请求/换 CDN；每次只验证一个假设，并把真实上游回包和结论记入开发日志。
+1. 先确认维护仓库 CI Run [#46127619086](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46127619086) 通过。
+2. 将维护仓库的 0.1.19 快进同步到 `qmancf206/beixiaoguo-CF`；由 Cloudflare Worker Build 部署后访问 `GET /api/v1/health`，确认 `version=0.1.19`。
+3. 打开主页“上游探测”。通常会自动带入本次失败的 HEIC 源 URL；如果为空，在页面上粘贴浏览器内的原始 URL。点击“开始 12 组 GET 探测”，复制探测报告即可，不要另行复制完整签名 URL。
+4. 重点看未修改 URL 的 `accept-webp`、`accept-avif` 和 `accept-unset`：
+   - 若 `accept-webp` 返回 `200 image/webp`，可证实普通 Worker fetch 能从源站直接获取 WebP，后续可评估绕开 `cf.image` 的正常路径改造。
+   - 若只有 `image/avif` 成功，记录模板/Accept 对应结果，再决定客户端与正式返回格式。
+   - 若所有 Accept-only 仍返回 HEIC，则查看模板/后缀与旧式参数试验；任何已改 URL 的 403/签名错误不能得出格式不支持结论。
+   - 若原 URL 的 Accept-only 全部 403，先判断签名是否过期；那一轮无法判断格式协商行为。
+5. 只有取得真实报告之后，才做正式封面链路的下一步修改；保持 Safari 17+ 原生 HEIC 兼容路径，所有非原生 HEIC 浏览器必须得到可显示格式。更新代码或测试后在同一轮再次同步本交接与开发日志。
 
-BXG_MEDIA_SECRET 已配置成功，不要再次执行 `wrangler secret put`；本故障与播放 Secret 无关。
+
 
 ### 6. 操作安全
 
@@ -118,7 +111,7 @@ BXG_MEDIA_SECRET 已配置成功，不要再次执行 `wrangler secret put`；�
 
 ## 当前版本
 
-**0.1.18 — 2026-11-28**
+**0.1.19 — 2026-11-28**
 
 - 已迁移原版 UI/PWA 资源。
 - 已接入 openhongguo Node.js/WASM SDK；0.1.2 采用预编译 `WebAssembly.Module`。CI 可验证 Pages 和 Workers 本地运行时 SDK 初始化；运行时烟雾测试不代表真实上游接口、受保护视频流或电视接力已验收。
@@ -132,7 +125,8 @@ BXG_MEDIA_SECRET 已配置成功，不要再次执行 `wrangler secret put`；�
 - 0.1.11 增加双层短剧预读：CF 侧最多预解析后续 6 集的播放地址／加密会话，浏览器侧最多预载后续 3 集；浏览器实际下载量仍由浏览器策略决定，CF 不会一次性缓存六集完整视频。
 - 0.1.12 增加真实 CF 媒体预热：最多 6 集受保护 MP4 在 CF 侧完整解密缓存（单集 ≤32 MiB）；前 3 集先缓存，后 3 集后台缓存；浏览器仍预载 3 集，Range 请求可命中缓存。
 - 0.1.17 明确 HEIC 转换失败时返回 503，不向 Chromium 返回原始 HEIC 假成功；前端停止重复重试；增加代理函数级测试。
-- 0.1.18 对需要转换的 HEIC 请求只声明 `Accept: image/webp`，补上 iOS 16 Safari 转换分支和 `9516` 错误码回归测试；CI Run #46115643235 全部通过。但用户最新反馈仍无法显示图片，实际 Worker 部署状态和新响应错误码待确认。
+- 0.1.18 对需要转换的 HEIC 请求只声明 `Accept: image/webp`，补上 iOS 16 Safari 转换分支和 `9516` 错误码回归测试；CI Run #46115643235 全部通过。但用户提供的实际生产 GET 仍返回 503/9516，说明 0.1.18 未解决该问题。
+- 0.1.19 新增独立的“上游图片探测”调试界面与受限诊断 API。只用普通 Worker GET 测 12 个 Accept/URL 变体，不使用 `cf.image`，也不更改正式封面代理；已加入 Mock 回归测试及版本一致性检查。提交 `31bf7de998402c1bede170e8aff0f55e8274b468` 的 CI Run #46127619086 当前需继续核对；必须部署后跑真实探测才能判断源站是否能直出 WebP/AVIF/JPEG。
 - 0.1.16 完善 HEIC/HEIF 图片流程：Safari 17+ 原图直出，其他浏览器请求 WebP 转换；签名 URL 规范化后使用 Cache API 30 天缓存，重试参数不影响缓存身份，并合并同 isolate 并发转换。
 - 0.1.13 增加浏览器本地自选 CF 反代 IP 管理器，支持 IPv4／IPv6，只填写 IP、固定 443，列表和选择保存在本机。选择时通过一次 `/api/v1/route?alt_ip=...` 同源请求提交 IP，Worker 校验地址后经内部响应头交给 Cloudflare Zone 响应头规则，以动态 Alt-Svc 公告备用入口；随后删除内部头，不写 Cookie，也不依赖 Pro 专属规则字段；新增 Alt-Used 诊断。真正切换必须绑定自有橙云域名并配置四条 Response Header Transform Rules；workers.dev／pages.dev 默认域名上仅保存 IP，不会切换。
 - 0.1.14 补充 MEDIA_SECRET_REQUIRED 的安全运行时诊断 media.secret.missing，记录 Secret 绑定和长度状态，不记录 Secret 值。
@@ -180,4 +174,4 @@ BXG_MEDIA_SECRET 已配置成功，不要再次执行 `wrangler secret put`；�
 
 ## 新对话无缝接手指令（2026-11-28）
 
-新 GPT 接手时，不要先重做已经完成的 0.1.17/0.1.18 工作。先读根目录 `AGENTS.md` 与本文件，再核对两个仓库 main SHA、最新 CI、网站 DEBUG 版本和最新失败 GET。当前任务不是“再设计一个图片方案”，而是查明 0.1.18 仍未解决的线上封面问题。第一条有效动作是核实线上真实版本并取得一条新的失败 GET 响应；有证据后再改代码。每次之后的代码修订，必须在同一轮更新本交接文档和开发日志，见 `AGENTS.md` 的强制规则。
+新 GPT 接手时，先读根目录 `AGENTS.md` 与本文件，核对两个仓库 SHA 和 CI。0.1.19 是上游探测诊断版，尚未同步生产；先确认 Run #181 通过，再同步部署 fork 并在生产主页运行“上游探测”。依据真实报告判断源站格式协商/模板行为后再改正式封面链路。每次代码、测试、配置或版本修订后必须在同一轮更新 `HANDOFF-CN.md` 与 `DEVELOPMENT-LOG-CN.md`。

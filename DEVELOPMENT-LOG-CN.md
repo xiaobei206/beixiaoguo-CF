@@ -1,9 +1,27 @@
-## 2026-11-28 线上状态复核（0.1.18；未修改应用代码）
+## 0.1.19 — 2026-11-28：上游图片格式探测 DEBUG 专版
 
-- 本轮复核开始时维护仓库 `main` 为 `d161be8540c25364c7453236c89827882d7be5ec`，属于仅修正文档的提交；CI Run [#46116623484](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46116623484) 成功。随后两份维护文档在 `3a4aae3de256d2c13365d3e02a29baa2f250a5d3` 一并更新；对应 CI Run [#46126086700](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46126086700) 最后一次核实时仍在执行。应用版本仍为 0.1.18，没有应用代码变更。
-- 生产部署 fork `main` 仍是 `cc94107d0cd0fcd4805234804775f6e3859ff665`。Cloudflare Workers and Pages Check Suite [#124755836973](https://api.github.com/repos/qmancf206/beixiaoguo-CF/check-suites/124755836973) 对这个 SHA 报告 `completed / success`；因此该提交的 Cloudflare 部署检查有成功记录。生产网站 `/api/v1/health` 的实时 JSON 本轮尚未取到，故域名实际返回的运行时版本仍待直接核验。
-- 最新失败图片 GET 的真实响应仍未取得。此前 0.1.17 的 9516 是旧的真实证据，但不能作为 0.1.18 部署后的结果；不能据此判定 Accept 协商是否生效，也不能盲目重复 HEIC 修复。本轮不改代码、测试、配置或应用版本。
-- 下一步：先核对生产 `GET /api/v1/health` 的 `version` 是否为 `0.1.18`，再提供最新失败图片 **GET** 的状态、响应体及诊断头（`Content-Type`、`X-BXG-Error-Code`、`X-BXG-Transform-Error-Code`、`X-BXG-Image-Cache`、`X-BXG-Image-Transform`、`X-BXG-Trace-ID`，必要时 `X-BXG-Debug`）；不要分享完整带签名 URL。拿到回包后先定根因，再做单假设最小修复。
+### 目的与实现
+- 用户提供的 0.1.18 真实失败 GET 证明封面仍返回 503 `IMAGE_TRANSFORM_UNAVAILABLE`；`X-BXG-Transform-Error-Code: 9516`。本次不重复修改 HEIC 修复方向，而是新增独立探测工具来判断源站能否基于 `Accept` 或模板/路径参数直接输出 WebP、AVIF 或 JPEG。
+- 新增 `functions/image-probe.js`、`POST /api/v1/debug/image-probe`、主页“上游探测”按钮和弹窗。正式的 `proxyCoverImage()` 流程未变。
+- 普通 Worker GET（不加 `cf.image`）探测 12 种情况：原 URL 分别声明 WebP、AVIF、HEIC、JPEG/PNG、浏览器 Accept、全格式 Accept、不显式设置 Accept；再试 .webp/.avif/.jpeg 后缀，以及旧式 `x-tos-process=image/format,webp` / `x-oss-process=image/format,webp` 查询参数。
+- 探测边界：HTTPS 的 `*.fqnovelpic.com`、无 URL 凭据/端口、HEIC/HEIF 路径；请求 URL 上限 4096 字符；最多 3 路并发、每项 5 秒、每会话 30 秒限一次；只跟随最多 2 次且仍在允许域内的重定向。成功图片只取响应头/Content-Length 后关闭响应体；非图片或失败响应最多读 512 字节文字。
+- 输出只包括上游主机、模板/签名存在与否、状态码、Content-Type、Content-Length、耗时、重定向主机、有限错误摘要和建议；不返回原始 URL、签名值或 expiry 值。失败原始 URL只在浏览器当前页面内存中暂存，不写入 DEBUG/localStorage。
+- 版本同步到 `VERSION`、`package.json`、Functions/API、前端 DEBUG、HTML 资源缓存参数/页脚均为 0.1.19；README、静态校验及 npm test 已纳入新诊断模块/回归测试。
+
+### 测试与验证状态
+- 新增 `scripts/test-image-probe.mjs`，以 Mock 覆盖 12 个 GET 变体、GET-only、不使用 `cf.image`、HTTPS/主机/端口/后缀限制、签名信息脱敏、拒绝跨域重定向和错误文本长度控制。
+- Mock 证明的是代码分支与安全边界，不代表真实 VeImageX 会按某个 Accept 返回指定 MIME；真实源站结论必须等 0.1.19 部署后由主页探测工具实测。
+- 维护仓库代码提交：`31bf7de998402c1bede170e8aff0f55e8274b468`。对应 CI Run [#46127619086](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46127619086) 在本次交接文档写入时仍在执行。
+- 部署 fork `qmancf206/beixiaoguo-CF` 仍为 0.1.18 的 `cc94107d0cd0fcd4805234804775f6e3859ff665`；生产当前仍显示 0.1.18。不得宣称诊断版已部署或封面已修复。
+- 下一步：先确认 Run #181 完成且成功，再由有权限账号同步部署 fork、检查生产健康接口返回 0.1.19，运行一次探测并解读真实结果；如果探测显示源站直接返回 WebP，才准备后续绕开 `cf.image` 的生产代码变更。
+
+## 2026-11-28：0.1.18 线上失败 GET 证据（补录）
+
+- 用户提供的生产 GET 返回 HTTP 503；头部为 `X-BXG-Error-Code: IMAGE_TRANSFORM_UNAVAILABLE`、`X-BXG-Image-Cache: MISS`、`X-BXG-Image-Transform: unavailable`、`X-BXG-Transform-Error-Code: 9516`。
+- `X-BXG-Debug` trace `d8b61985-9bb0-4869-aed5-df8e2cac841b` 的服务端事件顺序为 `image.cache.miss`（format=webp）→ `image.transform.unavailable`；内部转换 HTTP 422、`text/plain`，错误说明 HEIC 解码失败。此证据已替代之前“尚未取得 0.1.18 失败 GET”的旧交接描述。
+- 源地址 host 为 `p3-reading-sign.fqnovelpic.com`，路径使用 `~tplv-...:400:0.heic` 模板模式。完整签名 URL 未写入日志/源码/文档。
+
+
 
 ## 0.1.18 — 2026-11-28
 
