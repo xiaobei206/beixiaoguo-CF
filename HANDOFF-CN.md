@@ -1,31 +1,5 @@
 # 贝小果 Cloudflare 交接索引
 
-## 当前排障交接（2026-11-28；0.1.21 已提交）
-
-### 用户最新反馈与生产 DEBUG 证据
-- 用户在 iPhone 13 / iOS 16.1 Safari（iOS UA 为 `Version/16.1`）测试生产 0.1.20。主页 `/api/v1/discover` 与片库上游 API 均返回 HTTP 200；但封面反复触发 `image.resource.error` 和 `image.heic.transform.display-failed`，源图片 host 是 `p3-reading-sign.fqnovelpic.com`。
-- 报告没有 `image.heic.client-convert.success`，也没有 `image.heic.client-convert.failed`，因此该份日志能证明错误集中在图片加载/回退链路，但不能单独证明转码库本身失败。
-- 代码复核发现一个高度可疑的 IMG 生命周期竞争：v0.1.20 在开始异步本地转码前，将失败图片的 `src` 换成临时 data GIF；若新地址触发错误，委托错误处理器会移除 IMG，随后转换任务因 `!image.isConnected` 而提前退出，可能造成缺少转码结果日志。该机制是代码分析推断，仍需 iPhone 真机验收确认。
-
-### 0.1.21 当前实现
-- **完全取消 Cloudflare 图片转码**：移除图片代理中 `cf.image`、WebP 转码错误路径、成品 WebP Cache API 和转换并发合并逻辑。Workers/Pages 只在受限的 HTTPS `*.fqnovelpic.com` 代理图片原始字节；仍保留 MIME 白名单、最多 3 次重定向限制、10 MiB 大小上限及拒绝跨域重定向。
-- 浏览器遇到 HEIC/HEIF 时直接请求原图（`mode=source`）；Safari 17+ 保留原生显示，iOS 16 Safari、Chromium 等不支持原生 HEIC 的浏览器用自托管 `heic-to@1.6.7` 在本地转成 JPEG。
-- 修复 IMG 生命周期竞争：转换过程中隐藏原 IMG，但不改写其 `src`；等 JPEG Blob 转换完毕才设置 Blob URL。增加 `started`、`success`、`failed`、`display-failed` 以及阶段字段（抓取原图、读取 Blob、加载解码库、解码、显示）供后续 DEBUG 定位。
-- 自托管解码器仍不从第三方 CDN 加载；签名 URL 不写入 DEBUG/日志/本地存储；同时最多两个本地转换任务。普通 JPEG/PNG/WebP 仍走代理原字节路径。
-- 维护仓库代码提交：[`b9075a85c504ebcd988c05f7d4ef27d56d9dcf50`](https://github.com/xiaobei206/beixiaoguo-CF/commit/b9075a85c504ebcd988c05f7d4ef27d56d9dcf50)。版本号、API、前端与 HTML 缓存参数同步为 0.1.21。
-- 0.1.21 代码 CI [#46136309833](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46136309833) 已全部通过：Linux `npm test`、静态检查、Pages Functions bundle/runtime smoke、Workers bundle/runtime smoke，以及 Windows `npm test` 均成功。此结果验证代码和 mock/构建路径，不替代真实 iPhone Safari 或线上部署验收。
-
-### 部署与实机验收状态
-- 维护主线 `xiaobei206/beixiaoguo-CF` 当前代码 SHA：`b9075a85c504ebcd988c05f7d4ef27d56d9dcf50`。
-- 最近核实的部署 fork `qmancf206/beixiaoguo-CF` 仍为 `daac14ffd47919e04677889ec348be7db1a544b6`，未包含 0.1.21。当前 GitHub 连接对维护仓库有写权限、对部署 fork 只读；不能声称已经同步或部署。
-- 用户这份线上报告仍是 0.1.20。0.1.21 Worker Build 与真实生产部署尚未确认；iPhone 13 / iOS 16 Safari 的真实图片验收尚未完成。代码提交或 CI 通过均不等于手机问题已解决。
-
-### 下一步第一动作
-1. 0.1.21 代码 CI [#46136309833](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46136309833) 已全通过；除非修改源码，否则无需重跑同一代码测试。
-2. 由有权限的账号将维护 main 的 0.1.21 快进同步至 `qmancf206/beixiaoguo-CF`，等待 Cloudflare Worker Build/Pages deploy 完成，再以 `/api/v1/health` 确认实际运行版本为 0.1.21。
-3. 在 iPhone 13 / iOS 16 Safari 重新打开主页测试封面；预期 DEBUG 至少出现 `image.heic.client-convert.started`，成功时出现 `image.heic.client-convert.success`。如果失败，复制带 `stage` 的 `image.heic.client-convert.failed` 或 `image.heic.client-convert.display-failed`，按具体阶段继续定位。再测 Chromium、Safari 17+ 及 JPEG/PNG/WebP。
-4. 不要重跑已完成的 0.1.19 源站 Accept/URL 变体探测；该探测已证明源站当前签名 URL 直接返回 HEIC。
-
 ### 历史记录：0.1.19 上游图片探测 DEBUG 专版（2026-11-28)
 
 - **生产真实证据：** 0.1.18 的封面 GET 返回 503 `IMAGE_TRANSFORM_UNAVAILABLE`，`X-BXG-Transform-Error-Code: 9516`，`X-BXG-Image-Cache: MISS`，`X-BXG-Image-Transform: unavailable`；trace `d8b61985-9bb0-4869-aed5-df8e2cac841b` 显示 Cloudflare 转换 HTTP 422，并明确为 HEIC 解码失败。
@@ -135,36 +109,13 @@ npm.cmd test
 | [DEVELOPMENT-LOG-CN.md](DEVELOPMENT-LOG-CN.md) | 单一累计开发日志 |
 | [VERSION](VERSION) | 当前版本 |
 
-## 当前版本
-
-**0.1.19 — 2026-11-28**
-
-- 已迁移原版 UI/PWA 资源。
-- 已接入 openhongguo Node.js/WASM SDK；0.1.2 采用预编译 `WebAssembly.Module`。CI 可验证 Pages 和 Workers 本地运行时 SDK 初始化；运行时烟雾测试不代表真实上游接口、受保护视频流或电视接力已验收。
-- 已建立推荐、搜索、详情、多季、榜单、新剧与播放解析接口适配层，仍需真实上游验收。
-- 新增可选 Workers 部署入口：`worker.js` / `wrangler.worker.jsonc`，与 Pages 配置分开。
-- 渐进式 MP4 CENC AES-CTR 的边缘 Range 解密已在 0.1.7 实现；CI 通过解析器测试、媒体令牌／Range 单测和 Pages/Workers WASM 初始化验证，但真实上游分集端到端播放仍未验收。图片预热/持久缓存与电视接力尚未迁移。
-- 主页顶部有“部署教程”入口；Pages / Workers 安装步骤与拖放 ZIP 限制见 [docs/deploy-cloudflare-cn.md](docs/deploy-cloudflare-cn.md)。
-- 0.1.6 在首页直接显示 GitHub → Pages 设置参数、ZIP/文件夹拖放限制、Wrangler 手动部署与 Workers 备用路线。
-- 0.1.6 新增右上角 DEBUG 面板：可复制前后端诊断日志；每个 API 响应携带本次请求的边缘 trace，不依赖 Cloudflare isolate 内存连续性，并记录 Go/WASM runtime 与上游请求。
-- 0.1.6 对 `*.fqnovelpic.com` 封面启用 HTTPS 白名单图片代理，浏览器同源加载；仍需真实 CDN 请求确认上游未拒绝 Cloudflare 出口。
-- 0.1.11 增加双层短剧预读：CF 侧最多预解析后续 6 集的播放地址／加密会话，浏览器侧最多预载后续 3 集；浏览器实际下载量仍由浏览器策略决定，CF 不会一次性缓存六集完整视频。
-- 0.1.12 增加真实 CF 媒体预热：最多 6 集受保护 MP4 在 CF 侧完整解密缓存（单集 ≤32 MiB）；前 3 集先缓存，后 3 集后台缓存；浏览器仍预载 3 集，Range 请求可命中缓存。
-- 0.1.17 明确 HEIC 转换失败时返回 503，不向 Chromium 返回原始 HEIC 假成功；前端停止重复重试；增加代理函数级测试。
-- 0.1.18 对需要转换的 HEIC 请求只声明 `Accept: image/webp`，补上 iOS 16 Safari 转换分支和 `9516` 错误码回归测试；CI Run #46115643235 全部通过。但用户提供的实际生产 GET 仍返回 503/9516，说明 0.1.18 未解决该问题。
-- 0.1.19 新增独立的“上游图片探测”调试界面与受限诊断 API。只用普通 Worker GET 测 12 个 Accept/URL 变体，不使用 `cf.image`，也不更改正式封面代理；已加入 Mock 回归测试及版本一致性检查。提交 `31bf7de998402c1bede170e8aff0f55e8274b468` 的 CI Run #46127619086 当前需继续核对；必须部署后跑真实探测才能判断源站是否能直出 WebP/AVIF/JPEG。
-- 0.1.16 完善 HEIC/HEIF 图片流程：Safari 17+ 原图直出，其他浏览器请求 WebP 转换；签名 URL 规范化后使用 Cache API 30 天缓存，重试参数不影响缓存身份，并合并同 isolate 并发转换。
-- 0.1.13 增加浏览器本地自选 CF 反代 IP 管理器，支持 IPv4／IPv6，只填写 IP、固定 443，列表和选择保存在本机。选择时通过一次 `/api/v1/route?alt_ip=...` 同源请求提交 IP，Worker 校验地址后经内部响应头交给 Cloudflare Zone 响应头规则，以动态 Alt-Svc 公告备用入口；随后删除内部头，不写 Cookie，也不依赖 Pro 专属规则字段；新增 Alt-Used 诊断。真正切换必须绑定自有橙云域名并配置四条 Response Header Transform Rules；workers.dev／pages.dev 默认域名上仅保存 IP，不会切换。
-- 0.1.14 补充 MEDIA_SECRET_REQUIRED 的安全运行时诊断 media.secret.missing，记录 Secret 绑定和长度状态，不记录 Secret 值。
-- 原版 beixiaoguo-web 不受本仓库修改影响。
-
 ## Pages 部署参数
 
 - Build command：npm run build
 - Build output directory：public
 - GitHub 仓库：xiaobei206/beixiaoguo-CF
 - Production branch：main
-- Workers Builds 命令见部署教程；不要把 Pages 和 Worker 的 Wrangler 配置混用。
+- Workers 使用独立的 `worker.js` 与 `wrangler.worker.jsonc`；Pages 使用 Pages Functions 与 `wrangler.jsonc`。两种目标配置不要混用。
 
 
 ## 0.1.7：受保护分集边缘媒体处理
@@ -198,6 +149,12 @@ npm.cmd test
 - 仍需部署后重新播放一次取得实际 Range／解密失败原因；本次不宣称已经验证真实上游播放恢复。
 
 
-## 新对话无缝接手指令（2026-11-28）
+## 新对话无缝接手指令（2026-11-28；0.1.22）
 
-新 GPT 接手时，先读根目录 `AGENTS.md`、本文件和开发日志顶部。最新源站探测已经证明 Accept 与 URL 变体不能让签名源输出 WebP；勿重跑那 12 组探测。0.1.20 当前代码提交为 `cbadf8ac008bb6ae0c9a331f3d73219f8f01c203`，CI [#46131676914](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46131676914) 已全通过。接下来须由有权限账号把维护仓库 `xiaobei206/beixiaoguo-CF` 快进同步到部署 fork `qmancf206/beixiaoguo-CF`；Worker Build 完成后确认生产 `/api/v1/health` 返回 0.1.20，再在 iPhone 13 / iOS 16 Safari、Chromium 测首页封面、详情封面和普通 JPEG/PNG/WebP。当前仍不能声称实际手机已修复。每次代码、测试、配置或版本修订后，本轮同步更新本交接文件与开发日志。
+新 GPT 接手时，先读 `AGENTS.md`、本文件顶部“当前维护状态”和 `DEVELOPMENT-LOG-CN.md` 最新记录，再重新核实维护仓库与部署 fork SHA。
+
+- 当前维护仓库 main：`ac8c99a8019f55a5490a336d289e2f8b1694bc9e`；最终全平台 CI [#46150983842](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46150983842) 已全部通过。
+- 当前版本 0.1.22。主页没有播放线路、上游探测或部署教程入口；不要恢复这些已撤下功能，除非用户明确提出新的、可验证的需求。
+- DEBUG 必须保留：iPhone 13 / iOS 16.1 Safari 的 HEIC 本地解码真实验收尚未完成。失败时先使用现有阶段日志定位，不要重新增加旧上游探测器。
+- 部署 fork `qmancf206/beixiaoguo-CF` 最近核实为 `98014d46d23ca6560b6f241548c00484c3466371`，不含 0.1.22；Worker Build 与生产实际版本未知。当前连接对部署 fork 只读，不要声称已同步或部署。
+- 部署后先检查生产 `GET /api/v1/health` 是否返回 `0.1.22`，然后在 iPhone 13 / iOS 16.1 Safari、Chromium 和 Safari 17+ 验收 HEIC/普通图片及真实播放。

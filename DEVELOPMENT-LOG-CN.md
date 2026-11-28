@@ -1,3 +1,26 @@
+## 0.1.22 — 2026-11-28：主页入口精简，移除失效的线路/探测/部署教程能力
+
+### 用户反馈与范围
+- 用户认为主页的“播放线路”“上游探测”“部署教程”不适合终端看剧界面，要求删除；对 DEBUG 是否保留提出疑问。
+- 决定保留 DEBUG：0.1.21 的 iPhone 13 / iOS 16.1 Safari HEIC 本地解码尚未实机验收，API、图片与播放问题仍需要真实浏览器诊断。DEBUG 是支持工具，不作为普通业务操作入口。
+
+### 实施内容
+- 删除播放线路 UI、Alt-Svc 浏览器线路状态/自动公告、`/api/v1/route`、IP 校验模块 `functions/route-ip.js` 与对应单测。该方案不能可靠完成浏览器实际线路切换，HOSTS/本地 DNS 覆盖属于不同方案。
+- 删除上游图片格式探测 UI、`/api/v1/debug/image-probe`、探测模块 `functions/image-probe.js` 与对应单测。0.1.19 的 12 组源站探测已经完成任务；后续正常图片链路仍由现有原图代理和本地 HEIC 回退负责。
+- 删除主页部署教程按钮/弹窗、完整用户部署教程文档 `docs/deploy-cloudflare-cn.md`；移除 Cloudflare 版不支持的 settings/preheat 空壳 UI/API。其后端原本对设置 PUT 只回报“不使用 N1 服务端缓存设置”，预热直接返回 501，保留只会误导。
+- 同步清理前端事件绑定、CSS、静态检查、`npm test` 入口和 README/架构说明；修正 HEIC 回退测试中旧的 0.1.21 版本断言。
+- 版本统一为 0.1.22。顶部辅助按钮只保留“添加到桌面”和 DEBUG；发现/搜索/榜单/新剧/热搜/收藏/播放/投屏等业务逻辑不改。
+- 保留 DEBUG 前端/边缘日志、完整诊断包、每请求 Trace、图片 HEAD 失败记录、HEIC 转换阶段以及播放器 waiting/stalled/error 状态记录。
+
+### 测试、提交与部署边界
+- 最终维护 main SHA：`ac8c99a8019f55a5490a336d289e2f8b1694bc9e`；最终 CI [#46150983842](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46150983842) 全部通过：Linux `npm test`、Pages Functions bundle/runtime smoke、Workers bundle/runtime smoke、Windows `npm test`。
+- 修改提交链：`d955b0fe9fc19291849cfaa574ce0e82d579741c`、`fafa02c0981ee8bfd2438c2f8782b936e0943a03`、`777871668596009008ac57afaf9bb73384fdd154`、`ac8c99a8019f55a5490a336d289e2f8b1694bc9e`。中间 CI 曾发现旧部署教程静态断言、残留探测事件绑定和旧版本断言，均已修正；以最终成功 CI 为准。
+- 部署 fork `qmancf206/beixiaoguo-CF` 最近核实仍为 `98014d46d23ca6560b6f241548c00484c3466371`，未同步 0.1.22；本次连接对该 fork 只读。Cloudflare Worker Build 与生产实际版本尚未确认。
+- iPhone 13 / iOS 16.1 Safari 的真实 HEIC 本地解码验收仍待生产部署后完成。CI 证明静态逻辑、Mock/构建和运行时烟雾测试通过，不替代真实手机显示/播放验收。
+- 下一步第一动作：由有权限账号将维护 main 快进同步到部署 fork；Build 完成后确认生产 `/api/v1/health` 返回 `0.1.22`，再做 iOS 16 Safari 与 Chromium 图片实机验收。
+
+---
+
 ## 0.1.21 — 2026-11-28：移除 Cloudflare 图片转码，修复 iOS 本地转码链路
 
 ### 用户反馈与依据
