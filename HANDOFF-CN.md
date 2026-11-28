@@ -13,7 +13,7 @@
 - 修复 IMG 生命周期竞争：转换过程中隐藏原 IMG，但不改写其 `src`；等 JPEG Blob 转换完毕才设置 Blob URL。增加 `started`、`success`、`failed`、`display-failed` 以及阶段字段（抓取原图、读取 Blob、加载解码库、解码、显示）供后续 DEBUG 定位。
 - 自托管解码器仍不从第三方 CDN 加载；签名 URL 不写入 DEBUG/日志/本地存储；同时最多两个本地转换任务。普通 JPEG/PNG/WebP 仍走代理原字节路径。
 - 维护仓库代码提交：[`b9075a85c504ebcd988c05f7d4ef27d56d9dcf50`](https://github.com/xiaobei206/beixiaoguo-CF/commit/b9075a85c504ebcd988c05f7d4ef27d56d9dcf50)。版本号、API、前端与 HTML 缓存参数同步为 0.1.21。
-- - 0.1.21 代码 CI [#46136309833](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46136309833) 已全部通过：Linux `npm test`、静态检查、Pages Functions bundle/runtime smoke、Workers bundle/runtime smoke，以及 Windows `npm test` 均成功。此结果验证代码和 mock/构建路径，不替代真实 iPhone Safari 或线上部署验收。
+- 0.1.21 代码 CI [#46136309833](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46136309833) 已全部通过：Linux `npm test`、静态检查、Pages Functions bundle/runtime smoke、Workers bundle/runtime smoke，以及 Windows `npm test` 均成功。此结果验证代码和 mock/构建路径，不替代真实 iPhone Safari 或线上部署验收。
 
 ### 部署与实机验收状态
 - 维护主线 `xiaobei206/beixiaoguo-CF` 当前代码 SHA：`b9075a85c504ebcd988c05f7d4ef27d56d9dcf50`。
@@ -21,7 +21,7 @@
 - 用户这份线上报告仍是 0.1.20。0.1.21 Worker Build 与真实生产部署尚未确认；iPhone 13 / iOS 16 Safari 的真实图片验收尚未完成。代码提交或 CI 通过均不等于手机问题已解决。
 
 ### 下一步第一动作
-1. 确认上述 CI 的最终状态；失败时先修复并重新跑完整 CI。
+1. 0.1.21 代码 CI [#46136309833](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46136309833) 已全通过；除非修改源码，否则无需重跑同一代码测试。
 2. 由有权限的账号将维护 main 的 0.1.21 快进同步至 `qmancf206/beixiaoguo-CF`，等待 Cloudflare Worker Build/Pages deploy 完成，再以 `/api/v1/health` 确认实际运行版本为 0.1.21。
 3. 在 iPhone 13 / iOS 16 Safari 重新打开主页测试封面；预期 DEBUG 至少出现 `image.heic.client-convert.started`，成功时出现 `image.heic.client-convert.success`。如果失败，复制带 `stage` 的 `image.heic.client-convert.failed` 或 `image.heic.client-convert.display-failed`，按具体阶段继续定位。再测 Chromium、Safari 17+ 及 JPEG/PNG/WebP。
 4. 不要重跑已完成的 0.1.19 源站 Accept/URL 变体探测；该探测已证明源站当前签名 URL 直接返回 HEIC。

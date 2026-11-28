@@ -12,9 +12,9 @@
 
 ### 测试、提交、部署边界
 - 维护仓库代码提交：[`b9075a85c504ebcd988c05f7d4ef27d56d9dcf50`](https://github.com/xiaobei206/beixiaoguo-CF/commit/b9075a85c504ebcd988c05f7d4ef27d56d9dcf50)。
-- - 0.1.21 代码 CI [#46136309833](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46136309833) 已全部通过：Linux `npm test`、静态检查、Pages Functions bundle/runtime smoke、Workers bundle/runtime smoke，以及 Windows `npm test` 均成功。此结果验证代码和 mock/构建路径，不替代真实 iPhone Safari 或线上部署验收。
+- 0.1.21 代码 CI [#46136309833](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46136309833) 已全部通过：Linux `npm test`、静态检查、Pages Functions bundle/runtime smoke、Workers bundle/runtime smoke，以及 Windows `npm test` 均成功。此结果验证代码和 mock/构建路径，不替代真实 iPhone Safari 或线上部署验收。
 - 部署 fork 最近核实仍为 `daac14ffd47919e04677889ec348be7db1a544b6`，未同步 0.1.21；Worker Build 状态未知。iPhone 13 / iOS 16 Safari 真机测试待做，不能将 CI 通过等同于图片已经修复。
-- 下一步：CI 结束后按结果处理；同步 fork 并确认生产健康接口版本为 0.1.21；真机重新测试，若失败根据新日志 `stage` 字段定位。
+- 下一步：0.1.21 代码 CI 已全部通过；由有权限的账号同步部署 fork，确认生产健康接口版本为 0.1.21；iPhone 13 / iOS 16 Safari 真机重测，若失败根据新日志 `stage` 字段定位。
 
 ---
 
