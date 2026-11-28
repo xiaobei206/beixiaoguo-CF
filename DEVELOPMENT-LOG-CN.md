@@ -6,7 +6,7 @@
 - 不再把 Cloudflare Images 转换失败后的原始 HEIC 当作成功结果返回给 Chrome 等不支持 HEIC 的浏览器。转换请求网络异常、服务端错误、额度耗尽（9422）或返回非 WebP MIME 时，统一返回 HTTP 503、IMAGE_TRANSFORM_UNAVAILABLE 和 X-BXG-Image-Transform: unavailable；DEBUG 记录转换错误码及有限长度的错误摘要。
 - 前端识别需要 WebP 的 HEIC/HEIF 封面失败后立即显示原占位图，不再追加 _bxg_retry 重复执行同一转换；Safari 17+ 原生 HEIC 直出仍保留。
 - 移除 WebP Cache API 响应上不生效的 stale-while-revalidate 指令，30 天 max-age 保留。
-- 将图片测试扩展到真实 onRequest 图片路由：首次转换写入缓存、签名和重试参数变化仍命中、同 isolate 并发合并、9422/5xx 失败、Safari 原图、HEAD 不转换、重定向白名单验证。
+- 将图片测试扩展到生产 proxyCoverImage 函数级集成测试：直接从 API 源文件提取同一函数执行，注入模拟 Cache API 与 fetch，验证首次转换写入缓存、签名和重试参数变化仍命中、同 isolate 并发合并、9422/5xx 失败、Safari 原图、HEAD 不转换及重定向白名单验证，避免加载无关 Go/WASM SDK。
 - Cloudflare 官方来源说明明确：来源 allowlist 适用于 /cdn-cgi/image/ URL 转换，不适用于 Worker fetch() 子请求的 cf.image；当前实现不需要为 p3-reading-sign.fqnovelpic.com 增加 allowlist，也不应为此开放 Any origin。
 - 0.1.16 CI 已完整通过；0.1.17 新 CI 需重新验证。当前仍只维护 xiaobei206 仓库，未同步生产部署 fork。
 

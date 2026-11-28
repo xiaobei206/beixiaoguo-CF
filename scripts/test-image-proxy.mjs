@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import {
   browserSupportsNativeHeic,
   imageCacheKeyUrl,
@@ -53,7 +54,26 @@ const fakeCache = {
 const originalFetch = globalThis.fetch;
 const originalCaches = Object.getOwnPropertyDescriptor(globalThis, "caches");
 Object.defineProperty(globalThis, "caches", { configurable: true, writable: true, value: { default: fakeCache } });
-const { onRequest } = await import("../functions/api/v1/[[path]].js");
+const apiSource = await readFile(new URL("../functions/api/v1/[[path]].js", import.meta.url), "utf8");
+const proxyStart = apiSource.indexOf("const IMAGE_EDGE_CACHE_TTL_SECONDS =");
+const proxyEnd = apiSource.indexOf("\nconst MAX_MEDIA_RANGE_BYTES", proxyStart);
+assert.ok(proxyStart >= 0 && proxyEnd > proxyStart, "production image proxy block must exist");
+const proxyCode = apiSource.slice(proxyStart, proxyEnd);
+const testErrorResponse = (status, code, message, extraHeaders = {}) => new Response(
+  JSON.stringify({ error: { code, message } }),
+  { status, headers: { "Content-Type": "application/json; charset=utf-8", "X-BXG-Error-Code": code, ...extraHeaders } }
+);
+const debugRecord = () => {};
+const sanitizeDebugMessage = value => String(value == null ? "" : value).slice(0, 420);
+const proxyFactory = new Function(
+  "browserSupportsNativeHeic", "imageCacheKeyUrl", "imageProxyFetchOptions", "isHeicImageUrl",
+  "debugRecord", "sanitizeDebugMessage", "errorResponse",
+  proxyCode + "\nreturn proxyCoverImage;"
+);
+const proxyCoverImage = proxyFactory(
+  browserSupportsNativeHeic, imageCacheKeyUrl, imageProxyFetchOptions, isHeicImageUrl,
+  debugRecord, sanitizeDebugMessage, testErrorResponse
+);
 
 const source = (id, expiry, signature) =>
   "https://p3-reading-sign.fqnovelpic.com/novel-pic/" + id +
@@ -69,7 +89,8 @@ async function callImage(imageURL, { ua = chrome, method = "GET", retry = "" } =
     method,
     headers: { "User-Agent": ua, "X-BXG-Session": "test-image-session-01" },
   });
-  return onRequest({ request, runtimeName: "Image proxy integration test", env: {} });
+  const sourceUrl = new URL(request.url).searchParams.get("url") || "";
+  return proxyCoverImage(sourceUrl, method, "test-image-session-01", [], request);
 }
 const webp = () => new Response("fake-webp", { status: 200, headers: { "Content-Type": "image/webp", "Content-Length": "9" } });
 

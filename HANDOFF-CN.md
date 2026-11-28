@@ -2,7 +2,7 @@
 
 ## 当前排障交接（2026-11-28；新对话请先读）
 
-> **当前主线：修正 HEIC 转换失败行为并增强图片代理集成测试。** 0.1.16 已有 Safari 17+ 原生 HEIC 直出、Chrome 等浏览器 WebP 转换、稳定图片身份、Cache API 缓存及同 isolate 并发合并。0.1.17 不再把转换失败后的原始 HEIC 以 HTTP 200 返回给 Chrome：转换服务异常、非 WebP 输出或 9422 额度错误均返回 HTTP 503 / IMAGE_TRANSFORM_UNAVAILABLE；前端不再通过 _bxg_retry 重复请求失败的 HEIC 转换，而是显示统一占位图。Cache API 转换成品仅保留 30 天 max-age，不再声明不支持的 stale-while-revalidate。
+> **当前主线：修正 HEIC 转换失败行为并增强图片代理集成测试。** 0.1.16 已有 Safari 17+ 原生 HEIC 直出、Chrome 等浏览器 WebP 转换、稳定图片身份、Cache API 缓存及同 isolate 并发合并。0.1.17 不再把转换失败后的原始 HEIC 以 HTTP 200 返回给 Chrome：转换服务异常、非 WebP 输出或 9422 额度错误均返回 HTTP 503 / IMAGE_TRANSFORM_UNAVAILABLE；前端不再通过 _bxg_retry 重复请求失败的 HEIC 转换，而是显示统一占位图。回归测试直接提取 API 文件中的生产 proxyCoverImage 函数，以模拟 Cache API/fetch 验证完整图片代理行为，不导入 Go/WASM SDK。Cache API 转换成品仅保留 30 天 max-age，不再声明不支持的 stale-while-revalidate。
 >
 > **Cloudflare 来源白名单评审结论：** 官方文档说明 Images source allowlist 只作用于 /cdn-cgi/image/ URL 转换，不作用于 Worker fetch() 子请求上的 cf.image。当前项目用的是后一种方式，因此不需要在 Dashboard 为 p3-reading-sign.fqnovelpic.com 增加 Images source allowlist；不要为此开启 Any origin。Cache API 只在单个 Cloudflare 数据中心本地生效，可能因 PoP 变化或缓存淘汰再次转换。0.1.16 完整 CI 已通过；0.1.17 需完成新 CI 后再同步部署 fork，当前未发布生产。
 
