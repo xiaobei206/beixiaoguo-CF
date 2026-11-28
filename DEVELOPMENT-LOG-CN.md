@@ -8,7 +8,7 @@
 - 普通 JPEG/PNG/WebP 处理不变；Safari 17+ 原生 HEIC 路径不变。该方案需真实测试 iOS 16 Safari、Chromium、详情/主页图片和普通格式后才能视作已验收。
 
 ### 测试、提交与部署边界
-- 本次代码包含受限源图模式、客户端解码器懒加载/并发限制、代理回归测试、版本同步及交接文档。提交 SHA、CI Run 链接待本轮提交与 CI 完成后回填。
+- 本次代码提交：`6d4a5f695fd26fa6b3c72d5212fbb2934931f9d1`。首轮 CI [#46131317865](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46131317865) 的 Linux `npm test` 在 `scripts/check-static.mjs:89` 失败，因为旧断言仍查找 `skip-duplicate-transform-and-show-placeholder`，而新回退动作字符串为 `client-heic-conversion-fallback`。本轮更新静态断言并同步维护交接文档；修订后的完整 CI 仍需重新通过后才可部署。
 - `heic-to` 项目标明 LGPL-3.0；构建步骤随发布复制对应许可证。浏览器用法按上游公开 README 实现。
 - 目前真实生产验收未完成；代码/CI 通过不代表 iPhone 13 iOS 16 Safari 和实际 Cloudflare Worker 已恢复。部署 fork 的更新与 Worker Build 必须另外确认。
 

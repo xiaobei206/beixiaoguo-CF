@@ -86,7 +86,7 @@ if (!imageProxyOptions.includes('name.toLowerCase()') || !imageProxyOptions.incl
 if (!worker.includes("image.cache.hit") || !worker.includes("image.cache.stored") || !worker.includes("image.cache.inflight.join") || !worker.includes("IMAGE_EDGE_CACHE_TTL_SECONDS")) throw new Error("HEIC WebP output must use a stable edge cache and concurrent request deduplication.");
 if (!worker.includes("image.transform.unavailable") || !worker.includes("IMAGE_TRANSFORM_UNAVAILABLE") || !worker.includes("heic|heif")) throw new Error("Unsupported browsers must receive an explicit image transformation error instead of raw HEIC success.");
 if (worker.includes("stale-while-revalidate=86400")) throw new Error("Cache API transformed responses must not claim unsupported stale-while-revalidate behavior.");
-if (!js.includes("skip-duplicate-transform-and-show-placeholder")) throw new Error("HEIC image errors must not trigger a repeated transform retry.");
+if (!js.includes("client-heic-conversion-fallback")) throw new Error("HEIC image errors must fall back to client-side conversion without repeating the same transform.");
 if (!js.includes('proxy.searchParams.set("url", parsed.href)') || !js.includes('captureEdgeTrace(response)')) throw new Error("Frontend must proxy FQ Novel posters and collect per-request edge traces");
 if (!worker.includes('url.searchParams.get("sdk") === "probe" && context.env?.BXG_SMOKE_TEST === "1"')) throw new Error("The network-free WASM probe must remain gated to local smoke tests");
 if (!patcher.includes("__BXG_OPENHONGGUO_GO") || !patcher.includes("Go runtime recovery") || !patcher.includes("Go runtime exit monitor")) throw new Error("Go/WASM runtime recovery and exit monitoring patch is missing");
