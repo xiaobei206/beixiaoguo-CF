@@ -1,5 +1,16 @@
 # 贝小果 Cloudflare 开发日志
 
+## 0.1.16 — 2026-11-28
+
+### HEIC 智能转换与稳定边缘缓存
+- Safari 17+（包含 iOS Safari 17+）可直接显示 HEIC/HEIF，按 User-Agent 识别 Safari 版本后走原图代理，不消耗 WebP 转换额度；Chrome、Chromium 及其他未确认支持 HEIC 的浏览器仍转换为 WebP。
+- 普通 JPEG、PNG、GIF、AVIF、WebP 不调用图片转换，继续走原有代理逻辑；HEAD 诊断请求也不触发转换。
+- 增加稳定图片身份：保留源图片域名、完整路径、tplv 规格及 lk3s 等未知参数，只从缓存身份中排除 x-expires、x-signature 和外层重试参数；签名 URL 变化、查询参数顺序变化和 _bxg_retry 不再产生不同的 WebP 缓存键。
+- 对 WebP 成品使用 Cloudflare Cache API 缓存 30 天；同一 Worker isolate 内对相同图片转换请求进行并发合并。缓存命中直接返回成品，不再请求上游或执行转换。
+- Cloudflare 转换失败（包括 Images 免费额度用尽时的新转换错误）会再用完整签名 URL 请求原图代理；允许 image/heic 与 image/heif 原样返回，防止代理自身因 MIME 白名单再次制造 502。
+- 增加浏览器识别、HEIC/HEIF 转换门控、HEAD 不转换、签名轮换、lk3s 保留、重试参数隔离和不同图片不碰撞等回归测试。
+- Cloudflare Cache API 是数据中心本地缓存，可能因访问 PoP 变化或缓存淘汰而再次转换；当前不需要 KV/R2 绑定，也不承诺跨 PoP 的永久唯一转换。
+
 ## 0.1.15 — 2026-11-28
 
 ### 修复 HEIC／HEIF 封面图片在 Chromium 中破图

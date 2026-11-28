@@ -2,7 +2,9 @@
 
 ## 当前排障交接（2026-11-28；新对话请先读）
 
-> **当前主线：修复生产封面图片代理对 HEIC／HEIF 的兼容。** BXG_MEDIA_SECRET 已通过 Wrangler 写入正确的生产 Worker，用户已确认真实受保护视频可以播放；不要再次轮换 Secret，也不要从维护仓库手动 wrangler deploy 绕过部署 fork。当前图片错误已定位：源站返回 HTTP 200、Content-Type 为 image/heic，代理返回 HTTP 502 IMAGE_CONTENT_TYPE。0.1.15 在维护仓库对 HEIC/HEIF 来源请求 Cloudflare WebP 转换；需通过 CI 后同步到 qmancf206/beixiaoguo-CF，再验收线上封面。
+> **当前主线：完善 HEIC／HEIF 封面转换和缓存。** 0.1.15 首次加入 HEIC 转 WebP，但只是按扩展名无差别转换，没有稳定缓存，也会对 Safari 和 HEAD 请求触发转换。0.1.16 在维护仓库 main 增加 Safari 17+ 原生 HEIC 直出、非 Safari 的 HEIC／HEIF WebP 转换、稳定图片身份与 Cloudflare Cache API 30 天缓存、同 isolate 并发合并、转换失败原图回退。签名 URL 的 x-expires／x-signature 不参与缓存身份；lk3s、图片路径及 tplv 规格保留；外层 _bxg_retry 不影响缓存键。普通图片仍走原代理。
+>
+> **重要边界：** Cache API 只在单个 Cloudflare 数据中心本地生效，可能因 PoP 变化或淘汰再次转换；它不等价于 R2/KV 全局持久缓存。当前没有新增必须配置的绑定。CI 通过后再同步到部署 fork qmancf206/beixiaoguo-CF，不要从维护仓库手动部署生产 Worker。生产封面验收仍需检查 Content-Type: image/webp、X-BXG-Image-Transform 和 X-BXG-Image-Cache。
 
 ### 1. 已证实的故障现象
 
@@ -11,9 +13,9 @@
 - BXG_MEDIA_SECRET 已通过本机生成的强随机值并用 Wrangler 写入生产 Worker。密钥值没有写入 Git；不要轮换或复制到日志中。
 - 用户最新真实播放诊断已确认：GET /api/v1/play/:episodeId 返回 200，出现 edge.playback.cenc.session.ready、player.media.metadata（时长约 97.97 秒）和 player.media.playing。边缘预取 6/6 成功，3 集边缘缓存成功、0 失败，另外 3 集已排入后台缓存。
 - 当前剩余故障是封面图片。真实 Network 请求的源 URL 以 .heic 结尾；上游响应 HTTP 200，但 Content-Type 为 image/heic；当前代理用白名单拒绝它并返回 502 IMAGE_CONTENT_TYPE。Chrome 158 的普通 img 元素不支持直接显示 HEIC，因此单纯放宽 MIME 白名单并不能解决。
-- 0.1.15 修复方案：仅对源路径以 .heic 或 .heif 结尾的封面 fetch 设置 cf.image.format = webp；普通 JPEG、PNG、AVIF、WebP 继续原样代理。新增回归测试，检查 HEIC/HEIF 转 WebP 和 JPEG 不触发转换。
+- 0.1.15 的初始方案仅按 .heic/.heif 后缀直接转换，缺少 Safari 分流和稳定缓存；0.1.16 已补上这些能力。新增回归测试，检查 HEIC/HEIF 转 WebP 和 JPEG 不触发转换。
 - Cloudflare Images Free 当前每月包含 5,000 个不同转换组合；超出后新转换返回错误而不会对 Free 用量继续收费；Paid 计划超过包含额度后，每 1,000 个额外唯一转换计费 0.50 美元。转换只用于 HEIC／HEIF 来源，需留意生产回包是否成功及账号实际计划。
-- 图片修复目前只在维护仓库代码中，必须先通过维护仓库 CI，再同步到部署 fork 并由其 Cloudflare 部署流水线发布。不要声称图片修复已经在生产完成，直到同一 URL 返回 200、Content-Type 为 image/webp 且页面封面实际显示。
+- 0.1.16 当前提交仍先只进入维护仓库 main；必须先通过维护仓库 CI，再同步到部署 fork 并由其 Cloudflare 部署流水线发布。不要声称图片修复已经在生产完成，直到同一 URL 返回 200、Content-Type 为 image/webp 且页面封面实际显示。
 
 ### 2. 仓库与代码状态
 

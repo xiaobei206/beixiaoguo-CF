@@ -2,7 +2,7 @@
 
 贝小果的 Cloudflare 轻量化版本。静态网页可部署在 Cloudflare Pages 或 Workers Static Assets，匿名片库请求由边缘函数按需处理，不需要自管 VPS 或数据库。
 
-当前开发版本：0.1.15
+当前开发版本：0.1.16
 
 ## 开发原则
 
