@@ -1,3 +1,13 @@
+## 0.1.18 — 2026-11-28
+
+### 修正 HEIC 源站格式协商，并保留 Cloudflare 解码错误码
+- 真实生产 GET 请求已证明：Cloudflare Images 返回 HTTP 422，响应体为 ERROR 9516，明确指出 HEIC 解码失败；这不是 9422 免费额度耗尽。iOS 16 Safari 与 Chrome 一样不支持网页原生 HEIC，必须拿到 WebP 才能显示。
+- 发现图片代理发给 veImageX 的 Accept 同时声明 image/heic、image/avif、image/webp。veImageX 官方格式自适应优先级为 HEIC > AVIF > WebP；当多种自适应规则启用时，源站可能优先回 HEIC，导致 Cloudflare 随后解码失败。
+- 对必须转换的 HEIC/HEIF 请求（Chrome、iOS 16 Safari 等）只向源站声明 Accept: image/webp，同时继续请求 Cloudflare 输出 WebP；Safari 17+ 原生 HEIC 直出仍保留。这样可避免把 HEIC/AVIF 再次协商到转换链路，但源站仍需启用 WebP 自适应，生产效果必须以部署后的真实回包确认。
+- 代理现在从 Cloudflare 错误响应体提取 4 位错误码；例如 9516 会写入 X-BXG-Transform-Error-Code，不再只显示笼统的 HTTP_422。
+- 回归测试覆盖 iOS 16 Safari 的 WebP 转换路径、转换请求只声明 WebP、Safari 17 原图路径继续保留 HEIC，以及 9516 错误码提取。
+- 本版本修改维护仓库 main；部署 fork 当前与维护仓库同步在 bdf2a735f85ee82d81b88de8f50776b0b8f4541e，后续仍需等待本次代码 CI 与 Worker Builds 完成，再做真实图片 GET 验收。测试不模拟 veImageX 实际自适应设置，不把源站一定返回 WebP 写成已验证事实。
+
 # 贝小果 Cloudflare 开发日志
 
 ## 0.1.17 — 2026-11-28

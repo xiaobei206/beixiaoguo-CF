@@ -2,7 +2,7 @@
 
 ## 当前排障交接（2026-11-28；新对话请先读）
 
-> **当前主线：0.1.17 的 HEIC 转换失败语义和重定向边界已修复，代码/测试提交 1983cdff0220fcda4d468bfcfe1cfb758d5512dd 已通过完整 CI。** Safari 17+ 仍可原生显示 HEIC；其他浏览器对 HEIC/HEIF 请求 WebP。转换网络异常、5xx、9422、非 WebP 输出均明确返回 503，不再把原始 HEIC 当作成功；现在还会在每次合法重定向后重新判断目标格式，HEIC 转到 JPG/其他普通图片格式时不再错误地强制要求 WebP。前端失败时显示占位图，不重复追加 _bxg_retry。WebP Cache API 成品保留 30 天 max-age。
+> **当前主线：0.1.18 修正 HEIC 源站格式协商，并保留 Cloudflare 解码错误码。** 用户真实生产请求返回 503；DEBUG 显示 Cloudflare 转换服务 HTTP 422、内部错误 **9516**，明确为 HEIC 解码失败，不是 9422 额度耗尽。iOS 16 Safari 与 Chromium 都不支持原生 HEIC，必须通过 WebP 显示。排查发现原请求 Accept 同时声明 HEIC/AVIF/WebP，而 veImageX 自适应优先级为 HEIC > AVIF > WebP；0.1.18 对需要转换的请求仅声明 image/webp，避免源站优先回传 HEIC，并把响应体内的 9516 透传到诊断头。Safari 17+ 原生 HEIC 路径保持不变。**注意：veImageX 必须启用 WebP 自适应，才能在 Accept 仅有 image/webp 时返回 WebP；此行为尚须部署后用真实 GET 验证，不能提前宣称已修复线上图片。**
 >
 > **Cloudflare 来源白名单评审结论：** 官方文档说明 Images source allowlist 只作用于 /cdn-cgi/image/ URL 转换，不作用于 Worker fetch() 子请求上的 cf.image。当前项目用的是后一种方式，因此不需要在 Dashboard 为 p3-reading-sign.fqnovelpic.com 增加 Images source allowlist；不要为此开启 Any origin。Cache API 只在单个 Cloudflare 数据中心本地生效，可能因 PoP 变化或缓存淘汰再次转换。最新代码/测试提交 1983cdff 的 CI Run #46113661994 已全部通过；生产 fork 尚未同步，不能声称线上修复已生效。
 
@@ -12,7 +12,9 @@
 - 生产 Worker：beixiaoguo-cf-worker；Cloudflare Wrangler 已登录账号 qmancf206@gmail.com，Account ID 为 1ae982074154b7e96337455ee8bacc36。
 - BXG_MEDIA_SECRET 已通过本机生成的强随机值并用 Wrangler 写入生产 Worker。密钥值没有写入 Git；不要轮换或复制到日志中。
 - 用户最新真实播放诊断已确认：GET /api/v1/play/:episodeId 返回 200，出现 edge.playback.cenc.session.ready、player.media.metadata（时长约 97.97 秒）和 player.media.playing。边缘预取 6/6 成功，3 集边缘缓存成功、0 失败，另外 3 集已排入后台缓存。
-- 生产 fork 尚未同步的旧版本仍有封面图片故障：真实 Network 请求的源 URL 以 .heic 结尾；上游响应 HTTP 200、Content-Type 为 image/heic；旧版代理的 MIME 白名单拒绝该响应并返回 502 IMAGE_CONTENT_TYPE。维护仓库 main 的 0.1.17 已改为 HEIC→WebP 转换，并处理转换失败语义；Chrome 158 的普通 img 元素不支持直接显示 HEIC，因此单纯放宽 MIME 白名单并不能解决。
+- 用户在 2026-11-28 提供了维护仓库/生产版本 0.1.17 的真实失败 GET：Worker 返回 503 IMAGE_TRANSFORM_UNAVAILABLE；DEBUG 内部 Cloudflare 转换请求为 HTTP 422、Content-Type text/plain、ERROR 9516，错误内容明确为“Error while decoding the HEIC file”。缓存为 MISS；不是 9422 额度错误。该请求实际解码到 HEIC，但当前日志不包含变换前源站 Content-Type，尚不能证明 HEIC 是由固定 URL 格式还是 veImageX Accept 自适应选择。
+- 用户补充 iPhone 13 / iOS 16 Safari 也无法显示封面：Safari 16 不支持网页原生 HEIC，只有 Safari 17 起才加入该能力。因此 iOS 16 与 Chrome 都必须走 WebP 转换，不能把 iOS 16 放入原图直出分支。
+- 0.1.18 变更：对于需要 WebP 的 HEIC/HEIF 请求，源站 Accept 限定为 image/webp，避免 veImageX 同时启用 HEIC/AVIF/WebP 自适应时按 HEIC > AVIF > WebP 优先级选中 HEIC；错误体中的 4 位 Cloudflare 错误码（如 9516）会保留在 X-BXG-Transform-Error-Code。该改动依赖源站已启用 WebP 自适应；真实部署后必须检查一个失败 URL 是否变为 200 image/webp。
 - 0.1.15 的初始方案仅按 .heic/.heif 后缀直接转换；0.1.16 加入 Safari 分流、稳定缓存、签名参数规范化及同 isolate 并发合并；0.1.17 修正转换失败语义，并在 proxyCoverImage() 函数级测试中覆盖重定向目标格式变化。测试直接提取生产函数并注入模拟 fetch/Cache API，不覆盖完整 onRequest 路由分发。
 - Cloudflare Images Free 当前每月包含 5,000 个不同转换组合；超出后新转换返回错误而不会对 Free 用量继续收费；Paid 计划超过包含额度后，每 1,000 个额外唯一转换计费 0.50 美元。转换只用于 HEIC／HEIF 来源，需留意生产回包是否成功及账号实际计划。
 - 0.1.17 初始修复提交 5f16ffe 经测试隔离提交 19b27e3 后，CI Run #46111794538 已全部通过；随后重定向边界与失败路径测试提交 1983cdff 的 CI Run #46113661994 也已全部通过（Windows npm test、Linux/静态检查、Pages/Workers 构建及 WASM 运行时 smoke test）。维护仓库修复尚未同步到生产部署 fork，不能声称线上修复已生效。
@@ -73,12 +75,12 @@ npm.cmd test
 
 维护仓库 main 的 Windows 与 Linux CI 均已通过。VPS 本地快进到维护仓库 main 后，重新执行一次 `npm.cmd test`，确认用户机器也通过。不要升级 npm（10.9.9 足够）、重装 Node/Go/Git、重新克隆或把整份长日志复制出来；若失败，只需提供最后一个真实错误及其前后约 30 行。
 
-### 5. 0.1.17 图片修复的生产发布计划
+### 5. 0.1.18 HEIC 自适应协商修复的生产验收
 
-1. BXG_MEDIA_SECRET 已配置成功，不要再次执行 wrangler secret put，也不要重新部署仅为修复图片。
-2. 维护仓库代码/测试提交 1983cdff 已通过完整 CI（Run #46113661994）；部署 fork qmancf206/beixiaoguo-CF 的 main 仍为 67be601，尚未同步 0.1.17 修复。
-3. 当前代码/测试 CI 已全部通过。因本连接对 fork 没有 push 权限，请在 qmancf206/beixiaoguo-CF 仓库页面点击 Sync fork → Update branch，把维护仓库主线快进同步到部署 fork；不要强推，也不要从维护仓库本地执行 wrangler deploy。
-4. 等部署 fork 的 Cloudflare Worker Builds 部署完成后，重新请求之前失败的 HEIC 图片 URL：Chrome 请求 HEIC 应返回 HTTP 200、Content-Type image/webp；Safari 17+ 应返回原始 image/heic。
+1. BXG_MEDIA_SECRET 已配置成功，不要再次执行 wrangler secret put；图片修复不需要改 Secret。
+2. 生产 fork `qmancf206/beixiaoguo-CF` 的 main 已确认与维护仓库同步在 `bdf2a735f85ee82d81b88de8f50776b0b8f4541e`；本次 0.1.18 代码需要 CI 通过后再同步。
+3. 0.1.18 的关键生产验收是：Chrome 与 iOS 16 Safari 请求原 HEIC URL，响应必须为 HTTP 200、Content-Type `image/webp`，`X-BXG-Image-Transform: webp`；原错误 9516 必须消失。Safari 17+ 保持原生 HEIC 直出。
+4. 若 Accept 仅含 `image/webp` 后源站仍返回 HEIC/Cloudflare 仍为 422/9516，就说明该 veImageX 服务/模板并未用 WebP 自适应协商输出，届时需要改用该上游允许的 JPEG/WebP 模板/接口；不要反复调整 Cloudflare 的 9422 额度或来源白名单。
 5. 再检查普通 JPEG／WebP 封面仍正常。如果转换失败，收集新的 HTTP 状态、Content-Type、X-BXG-Error-Code、X-BXG-Trace-ID，不要包含完整签名 URL。
 
 ### 6. 操作安全

@@ -3,7 +3,7 @@ import { createClient, SearchFilter } from "openhongguo";
 import { ensureCencRuntime } from "../../cenc-runtime.js";
 import { openMediaSession, parseByteRange, parseContentRange, safeMediaSource, sealMediaSession } from "../../media-session.js";
 
-const VERSION = "0.1.17";
+const VERSION = "0.1.18";
 const MAX_CLIENTS = 128;
 const MAX_PROFILES = 256;
 const clients = new Map();
@@ -354,7 +354,8 @@ async function proxyCoverImageUncached(target, method, session, trace, userAgent
       try { responseDetail = (await response.clone().text()).slice(0, 600); } catch (_) {}
       const headerErrorCode = response.headers.get("cf-error-code") || response.headers.get("x-cf-error-code") || "";
       const quota = /\b9422\b/.test(headerErrorCode + " " + responseDetail);
-      const transformErrorCode = quota ? "9422" : (headerErrorCode || (!response.ok ? "HTTP_" + response.status : "UNEXPECTED_CONTENT_TYPE"));
+      const providerErrorCode = responseDetail.match(/\bERROR\s+(\d{4})\b/i)?.[1] || "";
+      const transformErrorCode = quota ? "9422" : (headerErrorCode || providerErrorCode || (!response.ok ? "HTTP_" + response.status : "UNEXPECTED_CONTENT_TYPE"));
       debugRecord(session, "error", "image.transform.unavailable", {
         host: target.hostname, status: response.status, contentType, transformErrorCode,
         responseDetail: sanitizeDebugMessage(responseDetail)

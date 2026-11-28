@@ -17,14 +17,21 @@ export function browserSupportsNativeHeic(userAgent) {
 
 /** Ordinary formats pass through. HEAD probes never trigger image conversion. */
 export function imageProxyFetchOptions(target, method, userAgent = "", enableTransform = true) {
+  const needsWebp = enableTransform && method !== "HEAD" &&
+    isHeicImageUrl(target) && !browserSupportsNativeHeic(userAgent);
   const fetchOptions = {
     method: method === "HEAD" ? "HEAD" : "GET",
-    headers: { "Accept": "image/avif,image/webp,image/apng,image/heic,image/heif,image/jpeg,image/png,image/*;q=0.8" },
+    // veImageX can choose HEIC before AVIF/WebP when Accept advertises all formats.
+    // For browsers that need conversion, request only WebP so the origin's
+    // adaptive-format rule does not send an HEIC file into Cloudflare's decoder.
+    headers: {
+      "Accept": needsWebp
+        ? "image/webp"
+        : "image/avif,image/webp,image/apng,image/heic,image/heif,image/jpeg,image/png,image/*;q=0.8"
+    },
     redirect: "manual",
     signal: AbortSignal.timeout(15000),
   };
-  const needsWebp = enableTransform && method !== "HEAD" &&
-    isHeicImageUrl(target) && !browserSupportsNativeHeic(userAgent);
   if (needsWebp) fetchOptions.cf = { image: { format: "webp" } };
   return fetchOptions;
 }

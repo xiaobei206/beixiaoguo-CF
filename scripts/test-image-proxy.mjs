@@ -10,19 +10,30 @@ import {
 
 const safari17IOS = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
 const safari16 = "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15";
+const safari16IOS = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1";
 const chrome = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.0.0 Safari/537.36";
 const chromeIOS = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/130.0.0.0 Mobile/15E148 Safari/604.1";
 
 assert.equal(browserSupportsNativeHeic(safari17IOS), true);
 assert.equal(browserSupportsNativeHeic(safari16), false);
+assert.equal(browserSupportsNativeHeic(safari16IOS), false);
 assert.equal(browserSupportsNativeHeic(chrome), false);
 assert.equal(browserSupportsNativeHeic(chromeIOS), false);
 
 for (const extension of ["heic", "heif"]) {
   const target = new URL("https://p3-reading-sign.fqnovelpic.com/novel-pic/cover." + extension + "?signature=test");
   assert.equal(isHeicImageUrl(target), true);
-  assert.deepEqual(imageProxyFetchOptions(target, "GET", chrome).cf, { image: { format: "webp" } });
-  assert.equal(imageProxyFetchOptions(target, "GET", safari17IOS).cf, undefined);
+  const chromeOptions = imageProxyFetchOptions(target, "GET", chrome);
+  assert.deepEqual(chromeOptions.cf, { image: { format: "webp" } });
+  assert.equal(chromeOptions.headers.Accept, "image/webp");
+  assert.equal(chromeOptions.headers.Accept.includes("image/heic"), false);
+  assert.equal(chromeOptions.headers.Accept.includes("image/avif"), false);
+  const safari16Options = imageProxyFetchOptions(target, "GET", safari16IOS);
+  assert.deepEqual(safari16Options.cf, { image: { format: "webp" } });
+  assert.equal(safari16Options.headers.Accept, "image/webp");
+  const safari17Options = imageProxyFetchOptions(target, "GET", safari17IOS);
+  assert.equal(safari17Options.cf, undefined);
+  assert.ok(safari17Options.headers.Accept.includes("image/heic"));
   assert.equal(imageProxyFetchOptions(target, "HEAD", chrome).cf, undefined);
 }
 assert.equal(imageProxyFetchOptions(new URL("https://p3-reading-sign.fqnovelpic.com/a.jpg"), "GET", chrome).cf, undefined);
