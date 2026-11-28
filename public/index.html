@@ -11,8 +11,8 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/assets/icon-192.png">
   <title>贝小果 Lite · 短剧时间</title>
-  <link rel="stylesheet" href="/assets/app.css?v=0.1.18">
-  <script defer src="/assets/app.js?v=0.1.18"></script>
+  <link rel="stylesheet" href="/assets/app.css?v=0.1.19">
+  <script defer src="/assets/app.js?v=0.1.19"></script>
 </head>
 <body>
   <div class="app-shell">
@@ -31,6 +31,7 @@
         <button id="install-app-button" class="install-button" type="button" aria-label="添加贝小果到桌面">⇧ 添加到桌面</button>
         <button id="route-button" class="settings-button route-button" type="button" aria-label="播放线路选择">↔ 播放线路</button>
         <button id="settings-button" class="settings-button" type="button" aria-label="部署教程">↗ 部署教程</button>
+        <button id="image-probe-button" class="settings-button image-probe-button" type="button" aria-label="上游图片格式探测">⌁ 上游探测</button>
         <button id="debug-log-button" class="debug-button" type="button" aria-label="打开 DEBUG 运行日志">☷ DEBUG <span id="debug-log-count">0</span></button>
       </div>
     </header>
@@ -79,7 +80,7 @@
     </main>
 
     <footer class="footer">
-      <span>贝小果 <b>0.1.18</b></span>
+      <span>贝小果 <b>0.1.19</b></span>
       <span>通过 Cloudflare 边缘网络提供服务 · 收藏与会话标识保存在当前浏览器</span>
     </footer>
   </div>
@@ -200,6 +201,17 @@
       </div>
       <p class="debug-privacy">日志只返回当前浏览器会话对应的服务端记录；请求参数、完整封面地址、Cookie 和签名信息不会展示。</p>
       <pre id="debug-output" class="debug-output" aria-live="polite">等待日志…</pre>
+    </div>
+  </dialog>
+  <dialog id="image-probe-dialog" class="detail-dialog image-probe-dialog">
+    <button id="image-probe-dialog-close" class="dialog-close" type="button" aria-label="关闭">×</button>
+    <div class="detail-content">
+      <div class="section-kicker">VEIMAGEX / UPSTREAM LAB</div><h2>上游图片格式探测</h2>
+      <p class="detail-meta">使用普通 Worker GET（不带 cf.image）探测同一张签名图片的 Accept 自适应、模板后缀和旧式处理参数。每项只读取响应头与最多 512 字节的文本错误，不下载整张图片。</p>
+      <label class="image-probe-field">HEIC/HEIF 原始上游 URL<textarea id="image-probe-url" rows="3" spellcheck="false" autocomplete="off" placeholder="出现破图后会自动填入最近一次失败封面；也可粘贴原始上游 URL"></textarea></label>
+      <p class="image-probe-privacy">只接受 HTTPS 的 *.fqnovelpic.com；每个浏览器会话 30 秒最多探测一次。签名 URL 仅用于本次请求，不写入日志或结果；改写路径/查询参数的实验可能因签名校验返回 403，这不等于格式不支持。</p>
+      <div class="debug-actions"><button id="image-probe-run" class="settings-primary" type="button">开始 12 组 GET 探测</button><button id="image-probe-copy" class="settings-secondary" type="button" disabled>复制探测报告</button></div>
+      <p id="image-probe-status" class="image-probe-status" role="status" aria-live="polite">准备就绪。优先探测刚才失败的封面。</p><div id="image-probe-summary" class="image-probe-summary"></div><pre id="image-probe-output" class="image-probe-output" aria-live="polite">等待运行…</pre>
     </div>
   </dialog>
   <button id="pip-hold-speed" class="pip-hold-speed hold-speed-button" type="button" aria-label="按住临时 2 倍速，松开恢复已设置倍速" hidden>按住 2×</button>

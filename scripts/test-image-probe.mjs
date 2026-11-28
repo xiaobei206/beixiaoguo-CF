@@ -1,0 +1,23 @@
+import assert from "node:assert/strict";
+import { probeUpstreamImage } from "../functions/image-probe.js";
+const source="https://p3-reading-sign.fqnovelpic.com/novel-pic/demo~tplv-81nmtwyey9-superreso-aifit:400:0.heic?lk3s=64477e16&x-expires=1801030882&x-signature=demo-signature";
+const calls=[],res=(status,type,body="unused",headers={})=>new Response(body,{status,headers:{"Content-Type":type,...headers}});
+const result=await probeUpstreamImage(source,{timeoutMs:1000,concurrency:3,fetchImpl:async(input,init)=>{
+ const url=new URL(input);calls.push({url,init});assert.equal(init.method,"GET");assert.equal(init.redirect,"manual");assert.equal(init.cache,"no-store");assert.equal(init.cf,undefined);
+ if(/\.(?:webp|avif|jpeg)$/i.test(url.pathname)||url.searchParams.has("x-tos-process")||url.searchParams.has("x-oss-process"))return res(403,"text/plain","signature mismatch");
+ const accept=new Headers(init.headers).get("Accept")||"";
+ if(accept==="image/webp")return res(200,"image/webp","webp",{"Content-Length":"4"});
+ if(accept==="image/avif")return res(200,"image/avif","avif",{"Content-Length":"4"});
+ if(accept==="image/heic")return res(200,"image/heic","heic",{"Content-Length":"4"});
+ if(accept.startsWith("image/jpeg"))return res(200,"image/jpeg","jpeg",{"Content-Length":"4"});
+ return res(200,"image/heic","heic",{"Content-Length":"4"});
+}});
+assert.equal(result.probeVersion,1);assert.equal(result.source.host,"p3-reading-sign.fqnovelpic.com");assert.equal(result.source.extension,"heic");assert.equal(result.source.templateUrl,true);assert.equal(result.source.signed,true);assert.equal(result.source.expiryPresent,true);
+assert.equal(result.tests.length,12);assert.equal(result.summary.directWebp,true);assert.equal(result.summary.directAvif,true);assert.ok(result.summary.observedMimeTypes.includes("image/webp"));assert.ok(result.summary.observedMimeTypes.includes("image/avif"));
+assert.ok(calls.every(x=>x.init.method==="GET"));assert.ok(calls.some(x=>new Headers(x.init.headers).get("Accept")==="image/webp"&&x.init.cf===undefined));assert.ok(calls.some(x=>new URL(x.url).pathname.endsWith(".webp")));assert.ok(calls.some(x=>new URL(x.url).searchParams.get("x-tos-process")==="image/format,webp"));
+assert.ok(!JSON.stringify(result).includes("demo-signature"));assert.ok(!JSON.stringify(result).includes("x-expires=1801030882"));
+for(const [url,code] of [["https://example.com/image.heic","IMAGE_PROBE_URL_REJECTED"],["http://p3-reading-sign.fqnovelpic.com/image.heic","IMAGE_PROBE_URL_REJECTED"],["https://p3-reading-sign.fqnovelpic.com:8443/image.heic","IMAGE_PROBE_URL_REJECTED"],["https://p3-reading-sign.fqnovelpic.com/image.jpg","IMAGE_PROBE_FORMAT_UNSUPPORTED"]])await assert.rejects(()=>probeUpstreamImage(url,{fetchImpl:async()=>{throw new Error("must not call fetch");}}),e=>e.code===code&&e.status===400);
+let redirects=0;const redirected=await probeUpstreamImage(source,{timeoutMs:1000,concurrency:3,fetchImpl:async()=>{redirects++;return new Response(null,{status:302,headers:{Location:"https://attacker.example/evil.heic?token=private"}});}});
+assert.equal(redirects,12);assert.ok(redirected.tests.every(x=>x.redirectBlocked&&x.errorCode==="REDIRECT_HOST_REJECTED"));assert.ok(!JSON.stringify(redirected).includes("attacker.example/evil.heic"));assert.ok(!JSON.stringify(redirected).includes("token=private"));
+const failed=await probeUpstreamImage(source,{timeoutMs:1000,concurrency:2,fetchImpl:async()=>res(403,"text/plain","bad signature https://fqnovelpic.com/a.heic?x-signature=private")});assert.ok(failed.tests.every(x=>x.status===403));assert.ok(!JSON.stringify(failed).includes("x-signature=private"));assert.ok(!JSON.stringify(failed).includes("fqnovelpic.com/a.heic"));
+console.log("Upstream image probe tests passed: allowlist, GET-only, 12 variants, signed URL redaction, redirect restriction and error sampling.");

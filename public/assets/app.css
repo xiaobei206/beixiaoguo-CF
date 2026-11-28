@@ -516,3 +516,20 @@ body { padding-top:env(safe-area-inset-top); }
   .debug-actions button { padding:7px 9px; font-size:10px; }
   .debug-output { min-height:220px; max-height:55vh; padding:10px; font-size:10px; }
 }
+
+
+/* Dedicated upstream image format probe. */
+.image-probe-button{border-color:rgba(142,189,247,.34);color:#bed9ff;background:rgba(100,151,224,.07)}
+.image-probe-button:hover{border-color:rgba(142,189,247,.65);background:rgba(100,151,224,.14)}
+.image-probe-dialog{width:min(900px,calc(100% - 28px));max-height:90vh}
+.image-probe-dialog .detail-content{padding:24px;max-height:90vh;overflow:auto}
+.image-probe-dialog h2{margin:5px 0 8px;font-size:22px}
+.image-probe-dialog .detail-meta{line-height:1.7}
+.image-probe-field{display:grid;gap:7px;margin:12px 0;color:var(--muted);font-size:12px}
+.image-probe-field textarea{box-sizing:border-box;width:100%;min-height:80px;resize:vertical;padding:10px 12px;border:1px solid var(--line);border-radius:10px;color:var(--text);background:#101015;font:11px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere}
+.image-probe-field textarea:focus{outline:none;border-color:rgba(142,189,247,.7)}
+.image-probe-privacy{margin:8px 0 12px;color:#a79ead;font-size:10px;line-height:1.7}
+.image-probe-status,.image-probe-summary{margin:9px 0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;color:#c9c1cc;background:rgba(255,255,255,.035);font-size:11px;line-height:1.7;overflow-wrap:anywhere}
+.image-probe-summary{color:#bed9ff;border-color:rgba(142,189,247,.22)}
+.image-probe-output{max-height:45vh;overflow:auto;margin:0;padding:12px;border:1px solid rgba(255,255,255,.09);border-radius:10px;color:#c9d9cd;background:#0d1110;font:10px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;tab-size:2}
+@media(max-width:760px){.image-probe-button{padding:7px 8px;font-size:10px}.image-probe-dialog .detail-content{padding:20px 15px}.image-probe-dialog h2{font-size:19px}.image-probe-output{max-height:46vh;padding:10px;font-size:10px}}

@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 const required = [
   "public/index.html", "public/assets/app.js", "public/assets/app.css",
   "public/assets/icon-192.png", "public/assets/icon-512.png",
-  "public/manifest.webmanifest", "public/_routes.json", "functions/api/v1/[[path]].js", "functions/image-proxy-options.js", "functions/openhongguo-runtime.js", "scripts/patch-openhongguo.mjs", "scripts/build-openhongguo.mjs", "wrangler.jsonc", "wrangler.worker.jsonc", "worker.js", "scripts/smoke-worker-runtime.mjs", "scripts/test-media-session.mjs", "scripts/test-image-proxy.mjs", "scripts/test-route-ip.mjs", "functions/route-ip.js", "functions/cenc-runtime.js", "functions/media-session.js", "edge-cenc/go.mod", "edge-cenc/cenc/layout.go", "edge-cenc/cenc/layout_test.go", "edge-cenc/wasm/main.go", "docs/deploy-cloudflare-cn.md", "VERSION"
+  "public/manifest.webmanifest", "public/_routes.json", "functions/api/v1/[[path]].js", "functions/image-proxy-options.js", "functions/image-probe.js", "functions/openhongguo-runtime.js", "scripts/patch-openhongguo.mjs", "scripts/build-openhongguo.mjs", "wrangler.jsonc", "wrangler.worker.jsonc", "worker.js", "scripts/smoke-worker-runtime.mjs", "scripts/test-media-session.mjs", "scripts/test-image-proxy.mjs", "scripts/test-image-probe.mjs", "scripts/test-route-ip.mjs", "functions/route-ip.js", "functions/cenc-runtime.js", "functions/media-session.js", "edge-cenc/go.mod", "edge-cenc/cenc/layout.go", "edge-cenc/cenc/layout_test.go", "edge-cenc/wasm/main.go", "docs/deploy-cloudflare-cn.md", "VERSION"
 ];
 for (const file of required) await access(file);
 
@@ -73,6 +73,11 @@ if (!worker.includes('parts[0] === "debug" && parts[1] === "logs"') || !worker.i
 if (!worker.includes('response.headers.set("X-BXG-Trace-ID", traceId)') || !worker.includes('response.headers.set("X-BXG-Debug", value)')) throw new Error("Every API response must carry its own edge trace, independent of isolate memory");
 if (!worker.includes('async function proxyCoverImage') || !worker.includes('host.endsWith(".fqnovelpic.com")') || !worker.includes('parts[0] === "images"')) throw new Error("FQ Novel poster images must use the restricted Cloudflare proxy");
 const imageProxyOptions = await readFile("functions/image-proxy-options.js", "utf8");
+const imageProbe = await readFile("functions/image-probe.js", "utf8");
+if (!worker.includes('parts[0] === "debug" && parts[1] === "image-probe"') || !worker.includes("probeUpstreamImage")) throw new Error("The dedicated upstream image diagnostic route is missing.");
+if (!html.includes('id="image-probe-button"') || !html.includes('id="image-probe-dialog"') || !html.includes('id="image-probe-run"') || !html.includes('id="image-probe-copy"')) throw new Error("The upstream image probe UI is incomplete.");
+if (!js.includes('/api/v1/debug/image-probe') || !js.includes("lastFailedCoverUrl") || !js.includes("lastImageProbeResult")) throw new Error("The UI must run upstream image probing from the last failed cover without persisting signed URLs.");
+if (!imageProbe.includes('MAX_URL=4096') || !imageProbe.includes('MAX_REDIRECTS=2') || !imageProbe.includes('method:"GET"') || !imageProbe.includes('"x-tos-process"') || !imageProbe.includes('"x-oss-process"')) throw new Error("The upstream image probe must remain bounded and cover documented variants.");
 if (!imageProxyOptions.includes("browserSupportsNativeHeic") || !imageProxyOptions.includes("stableImageIdentity") || !imageProxyOptions.includes("imageCacheKeyUrl")) throw new Error("HEIC browser detection and stable signed-URL cache identity are missing.");
 if (!imageProxyOptions.includes('name.toLowerCase()') || !imageProxyOptions.includes('"x-expires"') || !imageProxyOptions.includes('"x-signature"') || !imageProxyOptions.includes("lk3s")) throw new Error("Image cache normalization must ignore only ephemeral signature fields and retain other source parameters.");
 if (!worker.includes("image.cache.hit") || !worker.includes("image.cache.stored") || !worker.includes("image.cache.inflight.join") || !worker.includes("IMAGE_EDGE_CACHE_TTL_SECONDS")) throw new Error("HEIC WebP output must use a stable edge cache and concurrent request deduplication.");
@@ -96,7 +101,7 @@ if (!js.includes('parsed.protocol !== "https:"')) throw new Error("External cove
 if (js.includes("视频仍由 N1 按需读取与解密") || js.includes("N1 正在按需解密") || js.includes("明文 MP4")) throw new Error("Cloudflare playback UI contains stale N1-only wording");
 if (!js.includes("无需创建 KV")) throw new Error("Cloudflare runtime guide should state that KV is not required");
 
-for (const file of ["scripts/build-openhongguo.mjs", "public/assets/app.js", "functions/api/v1/[[path]].js", "functions/image-proxy-options.js", "functions/openhongguo-runtime.js", "scripts/patch-openhongguo.mjs", "scripts/smoke-sdk.mjs", "scripts/smoke-pages-runtime.mjs", "worker.js", "scripts/smoke-worker-runtime.mjs", "functions/cenc-runtime.js", "functions/media-session.js", "scripts/test-media-session.mjs", "scripts/test-image-proxy.mjs"]) {
+for (const file of ["scripts/build-openhongguo.mjs", "public/assets/app.js", "functions/api/v1/[[path]].js", "functions/image-proxy-options.js", "functions/image-probe.js", "functions/openhongguo-runtime.js", "scripts/patch-openhongguo.mjs", "scripts/smoke-sdk.mjs", "scripts/smoke-pages-runtime.mjs", "worker.js", "scripts/smoke-worker-runtime.mjs", "functions/cenc-runtime.js", "functions/media-session.js", "scripts/test-media-session.mjs", "scripts/test-image-proxy.mjs", "scripts/test-image-probe.mjs"]) {
   const result = spawnSync(process.execPath, ["--check", file], { encoding: "utf8" });
   if (result.status !== 0) throw new Error("Syntax check failed: " + file + "\n" + result.stderr);
 }

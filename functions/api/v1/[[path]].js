@@ -3,7 +3,7 @@ import { createClient, SearchFilter } from "openhongguo";
 import { ensureCencRuntime } from "../../cenc-runtime.js";
 import { openMediaSession, parseByteRange, parseContentRange, safeMediaSource, sealMediaSession } from "../../media-session.js";
 
-const VERSION = "0.1.18";
+const VERSION = "0.1.19";
 const MAX_CLIENTS = 128;
 const MAX_PROFILES = 256;
 const clients = new Map();
@@ -19,6 +19,7 @@ const DEBUG_LOG_TTL_MS = 60 * 60 * 1000;
 
 import { normalizeRouteIPAddress } from "../../route-ip.js";
 import { browserSupportsNativeHeic, imageCacheKeyUrl, imageProxyFetchOptions, isHeicImageUrl } from "../../image-proxy-options.js";
+import { probeUpstreamImage } from "../../image-probe.js";
 function sanitizeDebugMessage(value) {
   return String(value == null ? "" : value)
     .replace(/https?:\/\/[^\s"'<>]+/gi, (raw) => {
@@ -270,6 +271,8 @@ async function callClient(session, method, trace, ...args) {
 }
 const IMAGE_EDGE_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60;
 const imageTransformFlights = new Map();
+const imageProbeLastRuns = new Map();
+const IMAGE_PROBE_COOLDOWN_MS = 30000;
 
 function edgeImageCache() {
   try { return globalThis.caches?.default || null; } catch (_) { return null; }
@@ -763,6 +766,29 @@ export async function onRequest(context) {
     if (request.method === "OPTIONS") return sendResponse(new Response(null, { status: 204 }));
     if (request.method !== "GET" && request.method !== "HEAD" && request.method !== "POST" && request.method !== "PUT" && request.method !== "DELETE") {
       return sendError(405, "METHOD_NOT_ALLOWED", "不支持的请求方法");
+    }
+    if (parts[0] === "debug" && parts[1] === "image-probe") {
+      if (request.method !== "POST") return sendError(405, "IMAGE_PROBE_METHOD_NOT_ALLOWED", "上游图片探测只接受 POST 请求。");
+      const session = getSession(request);
+      requestSession = session;
+      let rawBody = "";
+      try { rawBody = await request.text(); } catch (_) { return sendError(400, "IMAGE_PROBE_BODY_INVALID", "无法读取探测请求正文。"); }
+      if (rawBody.length > 8192) return sendError(413, "IMAGE_PROBE_BODY_TOO_LARGE", "探测请求正文不能超过 8 KiB。");
+      let payload; try { payload = JSON.parse(rawBody); } catch (_) { return sendError(400, "IMAGE_PROBE_BODY_INVALID", "探测请求正文必须是有效 JSON。"); }
+      if (typeof payload?.url !== "string" || !payload.url.trim()) return sendError(400, "IMAGE_PROBE_URL_REQUIRED", "请先选择或粘贴一条 HEIC/HEIF 源图片 URL。");
+      const now = Date.now(), lastRun = imageProbeLastRuns.get(session) || 0, waitMs = IMAGE_PROBE_COOLDOWN_MS - (now - lastRun);
+      if (waitMs > 0) return sendError(429, "IMAGE_PROBE_RATE_LIMIT", "同一浏览器会话 30 秒内只能运行一次上游图片探测。", {"Retry-After":String(Math.ceil(waitMs / 1000))});
+      imageProbeLastRuns.set(session, now);
+      while (imageProbeLastRuns.size > 256) imageProbeLastRuns.delete(imageProbeLastRuns.keys().next().value);
+      try {
+        const probe = await probeUpstreamImage(payload.url, {timeoutMs:5000,concurrency:3});
+        debugRecord(session, "info", "image.upstream-probe.completed", {host:probe.source.host,variantCount:probe.summary.tested,directWebp:probe.summary.directWebp,directAvif:probe.summary.directAvif,mimeTypes:probe.summary.observedMimeTypes.join(",")}, requestTrace);
+        return sendJson(probe);
+      } catch (error) {
+        const status = Number(error?.status) || 400, code = typeof error?.code === "string" ? error.code : "IMAGE_PROBE_FAILED";
+        debugRecord(session, "warn", "image.upstream-probe.rejected", {code}, requestTrace);
+        return sendError(status, code, error?.message || "上游图片探测失败。");
+      }
     }
     if (parts[0] === "debug" && parts[1] === "logs") {
       const session = getSession(request);

@@ -2,7 +2,9 @@
 
 贝小果的 Cloudflare 轻量化版本。协作开发前请先阅读 [AGENTS.md](AGENTS.md) 和 [HANDOFF-CN.md](HANDOFF-CN.md)：前者是强制开发规矩，后者记录当前真实进度、CI、部署状态与下一步。静态网页可部署在 Cloudflare Pages 或 Workers Static Assets，匿名片库请求由边缘函数按需处理，不需要自管 VPS 或数据库。
 
-当前开发版本：0.1.18
+当前开发版本：0.1.19
+
+0.1.19 新增主页“上游探测”诊断按钮：对失败的 HEIC/HEIF 封面执行 12 组有界 GET，测试 Accept 自适应、模板后缀和历史处理参数；只收集状态、MIME、长度与小段错误，不下载并保存图片，也不修改正常封面链路。
 
 ## 开发原则
 

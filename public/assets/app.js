@@ -21,7 +21,7 @@
   let settingsRefreshTimer = 0;
   let deferredInstallPrompt = null;
   const DEBUG_STORAGE_KEY = "beixiaoguo.cf.debug-log";
-  const APP_VERSION = "0.1.18";
+  const APP_VERSION = "0.1.19";
   const EDGE_PREFETCH_COUNT = 6;
   const BROWSER_PRELOAD_COUNT = 3;
   const MAX_DEBUG_ENTRIES = 180;
@@ -34,6 +34,8 @@
   let serverDebugEntries = [];
   let serverDebugRuntime = null;
   let imageProbeStarted = false;
+  let lastFailedCoverUrl = "";
+  let lastImageProbeResult = null;
   function todayDateKey() {
     const now = new Date();
     return String(now.getFullYear()) + String(now.getMonth() + 1).padStart(2, "0") + String(now.getDate()).padStart(2, "0");
@@ -569,10 +571,61 @@
       },
       runtime:serverDebugRuntime,
       frontend:debugEntries,
-      edge:serverDebugEntries
+      edge:serverDebugEntries,
+      imageProbe:lastImageProbeResult
     };
   }
 
+  function findImageProbeSourceUrl() {
+    if (lastFailedCoverUrl) return lastFailedCoverUrl;
+    for (const image of document.querySelectorAll("img[data-original-src]")) {
+      const source = imageSourceDetails(image);
+      if (source && /\.(?:heic|heif)$/i.test(source.pathname) && (source.hostname === "fqnovelpic.com" || source.hostname.endsWith(".fqnovelpic.com"))) return source.href;
+    }
+    return "";
+  }
+  function openImageProbePanel() {
+    const dialog = $("#image-probe-dialog"), field = $("#image-probe-url"), status = $("#image-probe-status");
+    if (!field.value.trim()) field.value = findImageProbeSourceUrl();
+    if (!field.value.trim()) status.textContent = "尚未捕获到 HEIC/HEIF 封面。浏览页面让失败封面出现后再打开，或粘贴原始上游 URL。";
+    if (!dialog.open) dialog.showModal();
+    field.focus();
+  }
+  async function runImageProbe() {
+    const button = $("#image-probe-run"), field = $("#image-probe-url"), status = $("#image-probe-status");
+    const summary = $("#image-probe-summary"), output = $("#image-probe-output"), sourceUrl = field.value.trim();
+    if (!sourceUrl) { status.textContent = "请先选择或粘贴一条 HEIC/HEIF 上游 URL。"; return; }
+    if (button.disabled) return;
+    button.disabled = true; $("#image-probe-copy").disabled = true;
+    status.textContent = "正在执行 12 组受限 GET 探测；只检查响应头与小段错误文本，不下载整张图片……";
+    summary.textContent = ""; output.textContent = "等待上游探测结果…";
+    let host = ""; try { host = new URL(sourceUrl).hostname; } catch (_) {}
+    debugWrite("info", "image.upstream.probe.started", {host});
+    try {
+      const result = await request("/api/v1/debug/image-probe", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:sourceUrl})});
+      lastImageProbeResult = result;
+      const mimes = Array.isArray(result.summary?.observedMimeTypes) ? result.summary.observedMimeTypes : [];
+      summary.textContent = result.summary?.recommendation || "探测已结束，请查看各项状态。";
+      status.textContent = "完成：" + (result.tests || []).length + " 组 GET · 观测 MIME " + (mimes.join(", ") || "未检测到") + " · 签名信息已省略。";
+      output.textContent = JSON.stringify(result, null, 2);
+      debugWrite(result.summary?.directWebp ? "info" : "warn", "image.upstream.probe.completed", {tested:(result.tests || []).length,mimeTypes:mimes.join(","),directWebp:!!result.summary?.directWebp,directAvif:!!result.summary?.directAvif});
+      $("#image-probe-copy").disabled = false;
+    } catch (error) {
+      status.textContent = error.message || "上游探测失败。";
+      output.textContent = "没有获得完整探测报告。请查看 DEBUG 日志中的 IMAGE_PROBE 错误码。";
+      debugWrite("error", "image.upstream.probe.failed", {message:error.message || error});
+    } finally { button.disabled = false; }
+  }
+  async function copyImageProbeResults() {
+    if (!lastImageProbeResult) { showToast("还没有可复制的探测结果"); return; }
+    const payload = JSON.stringify(lastImageProbeResult, null, 2);
+    try { await navigator.clipboard.writeText(payload); showToast("上游探测结果已复制（不包含签名 URL）"); }
+    catch (_) {
+      const field = document.createElement("textarea"); field.value = payload; field.style.position = "fixed"; field.style.opacity = "0"; document.body.appendChild(field); field.select();
+      try { document.execCommand("copy"); showToast("上游探测结果已复制"); } catch (_) { showToast("复制失败，请手动复制探测结果"); }
+      field.remove();
+    }
+  }
   function openDebugPanel() {
     const dialog = $("#debug-dialog");
     if (!dialog.open) dialog.showModal();
@@ -797,6 +850,8 @@
     // Retrying a failed HEIC request with _bxg_retry would repeat the same
     // transformation. Show the normal placeholder instead.
     if (requiresWebp) {
+      // Keep the failed source URL in memory only; never log or persist signed parameters.
+      lastFailedCoverUrl = sourceUrl.href;
       replaceBrokenGridImage(image);
       return;
     }
@@ -2563,6 +2618,11 @@
   $("#route-copy-guide").addEventListener("click", copyRouteRuleGuide);
   $("#settings-button").addEventListener("click", openSettings);
   $("#debug-log-button").addEventListener("click", openDebugPanel);
+  $("#image-probe-button").addEventListener("click", openImageProbePanel);
+  $("#image-probe-dialog-close").addEventListener("click", () => $("#image-probe-dialog").close());
+  $("#image-probe-dialog").addEventListener("click", (event) => { if (event.target === $("#image-probe-dialog")) $("#image-probe-dialog").close(); });
+  $("#image-probe-run").addEventListener("click", runImageProbe);
+  $("#image-probe-copy").addEventListener("click", copyImageProbeResults);
   $("#debug-dialog-close").addEventListener("click", () => $("#debug-dialog").close());
   $("#debug-dialog").addEventListener("click", (event) => {
     if (event.target === $("#debug-dialog")) $("#debug-dialog").close();
