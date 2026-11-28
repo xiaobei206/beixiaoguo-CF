@@ -3,7 +3,7 @@ import { createClient, SearchFilter } from "openhongguo";
 import { ensureCencRuntime } from "../../cenc-runtime.js";
 import { openMediaSession, parseByteRange, parseContentRange, safeMediaSource, sealMediaSession } from "../../media-session.js";
 
-const VERSION = "0.1.19";
+const VERSION = "0.1.20";
 const MAX_CLIENTS = 128;
 const MAX_PROFILES = 256;
 const clients = new Map();
@@ -436,7 +436,7 @@ async function proxyCoverImageUncached(target, method, session, trace, userAgent
   return errorResponse(502, "IMAGE_PROXY_FAILED", "无法取得封面。");
 }
 
-async function proxyCoverImage(rawUrl, method, session, trace, request) {
+async function proxyCoverImage(rawUrl, method, session, trace, request, sourceOnly = false) {
   const parseTarget = (value) => {
     const target = new URL(value);
     const host = target.hostname.toLowerCase();
@@ -454,8 +454,11 @@ async function proxyCoverImage(rawUrl, method, session, trace, request) {
     return errorResponse(400, "IMAGE_URL_REJECTED", error.message);
   }
 
+  if (sourceOnly && (method !== "GET" || !isHeicImageUrl(target))) {
+    return errorResponse(400, "IMAGE_SOURCE_MODE_INVALID", "原始 HEIC/HEIF 模式仅允许受限源站的 GET 请求。");
+  }
   const userAgent = request.headers.get("user-agent") || "";
-  const needsWebp = isHeicImageUrl(target) && !browserSupportsNativeHeic(userAgent);
+  const needsWebp = !sourceOnly && isHeicImageUrl(target) && !browserSupportsNativeHeic(userAgent);
   const transformRequested = needsWebp && method !== "HEAD";
   let cache = null;
   let cacheKey = null;
@@ -1065,7 +1068,11 @@ export async function onRequest(context) {
     if (parts[0] === "images") {
       const imageUrl = url.searchParams.get("url") || "";
       if (!imageUrl) return sendError(400, "IMAGE_URL_REQUIRED", "缺少封面 URL。");
-      const imageResponse = await proxyCoverImage(imageUrl, request.method, session, requestTrace, request);
+      const sourceOnly = url.searchParams.get("mode") === "source";
+      if (sourceOnly && request.method !== "GET") {
+        return sendError(405, "IMAGE_SOURCE_MODE_METHOD_NOT_ALLOWED", "原始 HEIC/HEIF 模式只允许 GET 请求。");
+      }
+      const imageResponse = await proxyCoverImage(imageUrl, request.method, session, requestTrace, request, sourceOnly);
       return sendResponse(imageResponse);
     }
     return sendError(404, "NOT_FOUND", "找不到这个 API 路径。");

@@ -5,3 +5,5 @@ node_modules/
 .env.*
 !.env.example
 .DS_Store
+public/assets/vendor/heic-to.js
+public/assets/vendor/heic-to-LICENSE.txt

@@ -100,13 +100,15 @@ const requestURL = (imageURL, retry = "") => {
   if (retry) url.searchParams.set("_bxg_retry", retry);
   return url.href;
 };
-async function callImage(imageURL, { ua = chrome, method = "GET", retry = "" } = {}) {
-  const request = new Request(requestURL(imageURL, retry), {
+async function callImage(imageURL, { ua = chrome, method = "GET", retry = "", sourceOnly = false } = {}) {
+  const fullRequestURL = new URL(requestURL(imageURL, retry));
+  if (sourceOnly) fullRequestURL.searchParams.set("mode", "source");
+  const request = new Request(fullRequestURL.href, {
     method,
     headers: { "User-Agent": ua, "X-BXG-Session": "test-image-session-01" },
   });
   const sourceUrl = new URL(request.url).searchParams.get("url") || "";
-  return proxyCoverImage(sourceUrl, method, "test-image-session-01", [], request);
+  return proxyCoverImage(sourceUrl, method, "test-image-session-01", [], request, sourceOnly);
 }
 const webp = () => new Response("fake-webp", { status: 200, headers: { "Content-Type": "image/webp", "Content-Length": "9" } });
 
@@ -165,6 +167,23 @@ try {
   assert.match((await quota.json()).error.message, /免费转换额度已用尽/);
   assert.equal(calls.length, 1, "9422 must not trigger a second raw-HEIC fetch");
   assert.equal(cacheStore.size, 0);
+
+  // Opt-in source-only path returns HEIC without Cloudflare image decoding.
+  cacheStore.clear();
+  calls = [];
+  globalThis.fetch = async (input, options) => {
+    calls.push({ url: String(input), options });
+    return new Response("raw-heic", { status: 200, headers: { "Content-Type": "image/heic", "Content-Length": "8" } });
+  };
+  const rawSourceResponse = await callImage(source("abababababababababababababababab", "1801022960", "source-only"), { sourceOnly: true });
+  assert.equal(rawSourceResponse.status, 200);
+  assert.equal(rawSourceResponse.headers.get("Content-Type"), "image/heic");
+  assert.equal(rawSourceResponse.headers.get("X-BXG-Image-Transform"), "none");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].options.cf, undefined, "source-only mode must not invoke Cloudflare image decoding");
+  const invalidSourceModeResponse = await callImage("https://p3-reading-sign.fqnovelpic.com/cover.jpg", { sourceOnly: true });
+  assert.equal(invalidSourceModeResponse.status, 400, "source-only mode must reject ordinary image formats");
+  assert.equal((await invalidSourceModeResponse.json()).error.code, "IMAGE_SOURCE_MODE_INVALID");
 
   // Generic transform 5xx and unexpected output MIME also return an explicit failure.
   calls = [];

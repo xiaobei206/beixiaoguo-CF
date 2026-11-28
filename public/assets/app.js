@@ -21,7 +21,7 @@
   let settingsRefreshTimer = 0;
   let deferredInstallPrompt = null;
   const DEBUG_STORAGE_KEY = "beixiaoguo.cf.debug-log";
-  const APP_VERSION = "0.1.19";
+  const APP_VERSION = "0.1.20";
   const EDGE_PREFETCH_COUNT = 6;
   const BROWSER_PRELOAD_COUNT = 3;
   const MAX_DEBUG_ENTRIES = 180;
@@ -35,6 +35,12 @@
   let serverDebugRuntime = null;
   let imageProbeStarted = false;
   let lastFailedCoverUrl = "";
+  let clientHeicFallbackMode = false;
+  let heicConverterPromise = null;
+  let activeHeicConversions = 0;
+  const heicConversionWaiters = [];
+  const HEIC_CLIENT_MAX_BYTES = 10 << 20;
+  const HEIC_PENDING_PIXEL = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
   let lastImageProbeResult = null;
   function todayDateKey() {
     const now = new Date();
@@ -81,9 +87,34 @@
     });
   }
 
+  function isHeicSourceUrl(value) {
+    try { return /\.(?:heic|heif)$/i.test((value instanceof URL ? value : new URL(String(value))).pathname); }
+    catch (_) { return false; }
+  }
+
+  function isAllowedHeicSource(value) {
+    try {
+      const source = value instanceof URL ? value : new URL(String(value));
+      const host = source.hostname.toLowerCase();
+      return source.protocol === "https:" && !source.username && !source.password && !source.port &&
+        (host === "fqnovelpic.com" || host.endsWith(".fqnovelpic.com")) && isHeicSourceUrl(source);
+    } catch (_) { return false; }
+  }
+
   function safeImage(value) {
     const raw = String(value || "").trim();
-    if (/^\/api\/v1\/images(?:\?|\/)/i.test(raw)) return raw;
+    if (/^\/api\/v1\/images(?:\?|\/)/i.test(raw)) {
+      if (!clientHeicFallbackMode) return raw;
+      try {
+        const proxy = new URL(raw, window.location.origin);
+        const source = proxy.searchParams.get("url");
+        if (source && isAllowedHeicSource(source)) {
+          proxy.searchParams.set("mode", "source");
+          return proxy.pathname + proxy.search;
+        }
+      } catch (_) {}
+      return raw;
+    }
     if (!raw) return "";
     try {
       const parsed = new URL(raw, window.location.origin);
@@ -103,6 +134,7 @@
       if (host === "fqnovelpic.com" || host.endsWith(".fqnovelpic.com")) {
         const proxy = new URL("/api/v1/images", window.location.origin);
         proxy.searchParams.set("url", parsed.href);
+        if (clientHeicFallbackMode && isHeicSourceUrl(parsed)) proxy.searchParams.set("mode", "source");
         return proxy.pathname + proxy.search;
       }
       return parsed.href;
@@ -825,34 +857,166 @@
     } catch (_) { return null; }
   }
 
+  function revokeHeicObjectUrl(image) {
+    const objectUrl = image && image.dataset ? image.dataset.heicObjectUrl : "";
+    if (!objectUrl) return;
+    try { URL.revokeObjectURL(objectUrl); } catch (_) {}
+    delete image.dataset.heicObjectUrl;
+  }
+
   function replaceBrokenGridImage(image) {
+    revokeHeicObjectUrl(image);
     const placeholder = document.createElement("div");
     placeholder.className = "poster-placeholder";
     placeholder.textContent = "贝";
     image.replaceWith(placeholder);
   }
 
+  function loadHeicConverter() {
+    if (typeof window.HeicTo === "function") return Promise.resolve(window.HeicTo);
+    if (!heicConverterPromise) {
+      heicConverterPromise = new Promise((resolve, reject) => {
+        const existing = document.querySelector('script[data-heic-converter="1"]');
+        const script = existing || document.createElement("script");
+        const failed = () => {
+          heicConverterPromise = null;
+          if (!existing) script.remove();
+          reject(Object.assign(new Error("IMAGE_HEIC_DECODER_LOAD_FAILED"), {code:"IMAGE_HEIC_DECODER_LOAD_FAILED"}));
+        };
+        script.onload = () => {
+          if (typeof window.HeicTo === "function") resolve(window.HeicTo);
+          else failed();
+        };
+        script.onerror = failed;
+        if (!existing) {
+          script.async = true;
+          script.dataset.heicConverter = "1";
+          script.src = "/assets/vendor/heic-to.js?v=" + encodeURIComponent(APP_VERSION);
+          document.head.appendChild(script);
+        }
+      });
+    }
+    return heicConverterPromise;
+  }
+
+  async function withHeicConversionSlot(task) {
+    if (activeHeicConversions >= 2) await new Promise((resolve) => heicConversionWaiters.push(resolve));
+    else activeHeicConversions++;
+    try { return await task(); }
+    finally {
+      const next = heicConversionWaiters.shift();
+      if (next) next();
+      else activeHeicConversions--;
+    }
+  }
+
+  async function convertHeicGridImage(image, sourceUrl) {
+    await withHeicConversionSlot(async () => {
+      if (!image.isConnected) return;
+      const source = new URL("/api/v1/images", window.location.origin);
+      source.searchParams.set("url", sourceUrl.href);
+      source.searchParams.set("mode", "source");
+      let response;
+      try {
+        response = await fetch(source.href, {
+          method:"GET",
+          headers:{"X-BXG-Session":playbackClientId},
+          credentials:"same-origin",
+          cache:"default",
+          signal:AbortSignal.timeout(12000)
+        });
+      } catch (_) {
+        throw Object.assign(new Error("IMAGE_HEIC_SOURCE_FETCH_FAILED"), {code:"IMAGE_HEIC_SOURCE_FETCH_FAILED"});
+      }
+      if (!response.ok) {
+        try { await response.body?.cancel(); } catch (_) {}
+        throw Object.assign(new Error("IMAGE_HEIC_SOURCE_HTTP_ERROR"), {code:"IMAGE_HEIC_SOURCE_HTTP_ERROR"});
+      }
+      const contentType = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+      const length = Number(response.headers.get("content-length")) || 0;
+      if (!/^image\/(?:heic|heif)$/.test(contentType) || length > HEIC_CLIENT_MAX_BYTES) {
+        try { await response.body?.cancel(); } catch (_) {}
+        throw Object.assign(new Error("IMAGE_HEIC_SOURCE_INVALID"), {code:"IMAGE_HEIC_SOURCE_INVALID"});
+      }
+      const sourceBlob = await response.blob();
+      if (!sourceBlob.size || sourceBlob.size > HEIC_CLIENT_MAX_BYTES) {
+        throw Object.assign(new Error("IMAGE_HEIC_SOURCE_SIZE_INVALID"), {code:"IMAGE_HEIC_SOURCE_SIZE_INVALID"});
+      }
+      const decoder = await loadHeicConverter();
+      const jpeg = await decoder({blob:sourceBlob,type:"image/jpeg",quality:0.84});
+      if (!(jpeg instanceof Blob) || !jpeg.size || jpeg.size > HEIC_CLIENT_MAX_BYTES) {
+        throw Object.assign(new Error("IMAGE_HEIC_CONVERSION_OUTPUT_INVALID"), {code:"IMAGE_HEIC_CONVERSION_OUTPUT_INVALID"});
+      }
+      if (!image.isConnected) return;
+      const objectUrl = URL.createObjectURL(jpeg);
+      image.dataset.heicObjectUrl = objectUrl;
+      const cleanup = () => {
+        if (image.dataset.heicObjectUrl !== objectUrl) return;
+        try { URL.revokeObjectURL(objectUrl); } catch (_) {}
+        delete image.dataset.heicObjectUrl;
+      };
+      image.addEventListener("load", cleanup, {once:true});
+      image.addEventListener("error", cleanup, {once:true});
+      image.src = objectUrl;
+      debugWrite("info", "image.heic.client-convert.success", {
+        sourceHost:sourceUrl.hostname,inputBytes:sourceBlob.size,outputBytes:jpeg.size
+      });
+    });
+  }
+
+  function startHeicGridConversion(image, sourceUrl) {
+    if (!image || !image.isConnected || image.dataset.heicFallbackAttempted === "1") return;
+    image.dataset.heicFallbackAttempted = "1";
+    image.src = HEIC_PENDING_PIXEL;
+    convertHeicGridImage(image, sourceUrl).catch((error) => {
+      const rawCode = String(error && error.code || "");
+      const code = /^IMAGE_[A-Z_]+$/.test(rawCode) ? rawCode : "IMAGE_HEIC_CONVERSION_FAILED";
+      debugWrite("warn", "image.heic.client-convert.failed", {sourceHost:sourceUrl.hostname,code});
+      if (image.isConnected) replaceBrokenGridImage(image);
+    });
+  }
+
+  function enableClientHeicFallback(failedImage, failedSourceUrl) {
+    const alreadyEnabled = clientHeicFallbackMode;
+    clientHeicFallbackMode = true;
+    startHeicGridConversion(failedImage, failedSourceUrl);
+    if (alreadyEnabled) return;
+    for (const image of document.querySelectorAll("#series-grid img[data-original-src], #hero img, #detail-content img")) {
+      if (image === failedImage || image.dataset.heicFallbackAttempted === "1") continue;
+      const sourceUrl = imageSourceDetails(image);
+      if (!sourceUrl || !isAllowedHeicSource(sourceUrl) || browserSupportsNativeHeicForUi()) continue;
+      startHeicGridConversion(image, sourceUrl);
+    }
+  }
+
   function handleGridImageError(event) {
     const image = event.target;
     if (!image || image.tagName !== "IMG") return;
+    if (image.dataset.heicFallbackAttempted === "1") {
+      replaceBrokenGridImage(image);
+      return;
+    }
     let imageHost = "";
     try { imageHost = new URL(image.currentSrc || image.src).hostname; } catch (_) {}
     const sourceUrl = imageSourceDetails(image);
     const originalHost = sourceUrl ? sourceUrl.hostname : "";
-    const requiresWebp = !!sourceUrl && /\.(?:heic|heif)$/i.test(sourceUrl.pathname) && !browserSupportsNativeHeicForUi();
+    const requiresWebp = !!sourceUrl && isHeicSourceUrl(sourceUrl) && !browserSupportsNativeHeicForUi();
     debugWrite(requiresWebp ? "error" : "warn", requiresWebp ? "image.heic.transform.display-failed" : "image.load.error", {
       proxyHost:imageHost, sourceHost:originalHost,
       sourceFormat:sourceUrl ? sourceUrl.pathname.split(".").pop().toLowerCase() : "",
       retryCount:Number(image.dataset.retryCount) || 0,
-      action:requiresWebp ? "skip-duplicate-transform-and-show-placeholder" : "normal-retry"
+      action:requiresWebp ? "client-heic-conversion-fallback" : "normal-retry"
     });
 
-    // Retrying a failed HEIC request with _bxg_retry would repeat the same
-    // transformation. Show the normal placeholder instead.
+    // The source signs a fixed HEIC output. Keep its URL intact and convert locally
+    // only after the optimized Cloudflare WebP path fails.
     if (requiresWebp) {
-      // Keep the failed source URL in memory only; never log or persist signed parameters.
-      lastFailedCoverUrl = sourceUrl.href;
-      replaceBrokenGridImage(image);
+      if (isAllowedHeicSource(sourceUrl)) {
+        lastFailedCoverUrl = sourceUrl.href;
+        enableClientHeicFallback(image, sourceUrl);
+      } else {
+        replaceBrokenGridImage(image);
+      }
       return;
     }
 
@@ -2556,6 +2720,8 @@
   }, {passive:true});
   window.addEventListener("resize", maybeAutoLoadMore, {passive:true});
   $("#series-grid").addEventListener("error", handleGridImageError, true);
+  $("#hero").addEventListener("error", handleGridImageError, true);
+  $("#detail-content").addEventListener("error", handleGridImageError, true);
   $("#series-grid").addEventListener("click", (event) => {
     const card = event.target.closest(".series-card");
     if (card) openDetail(card.dataset.id);

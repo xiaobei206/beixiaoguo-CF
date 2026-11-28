@@ -1,6 +1,17 @@
 # 贝小果 Cloudflare 交接索引
 
-### 0.1.19 上游图片探测 DEBUG 专版（2026-11-28）
+## 当前排障交接（2026-11-28；0.1.20 开发中）
+
+### 最新真实证据与结论
+- 用户在生产 0.1.19 的“上游探测”报告（2026-11-28T09:23:56Z）证明：原始签名 HEIC URL 的 7 组 Accept-only GET 全部 HTTP 200、MIME 为 `image/heic`、长度 42,741 字节。源站不按 Accept 改输出格式。
+- 将路径后缀改成 .webp/.avif/.jpeg 均 HTTP 403 Tengine 签名／权限拒绝；这只能证明改写后的签名不合法，不能证明格式不支持。追加 `x-tos-process` 与 `x-oss-process` 查询参数仍返回 HEIC，没有观察到这些参数生效。
+- **排障结论：** 这条已签名模板 URL 在当前配置下固定返回 HEIC；请求头协商不起作用。无法仅靠 Worker 改写路径而保留有效签名。上游签发逻辑若能签发明确 WebP/JPEG 模板 URL，是更理想的源头修复，但当前客户端没有签发密钥/接口。
+- 参考官方 VeImageX 文档：图片输出格式可在模板/签发 URL 中指定；格式自适应需要模板启用，并非任意 Accept 都自动转码。文档说明通用机制，不证明这条签名 URL 还能通过某个未测试参数变格式。
+- **0.1.20 目标：** 保留常规 Cloudflare WebP 转换作为快路径；该路径失败时，从受限同源 API 取原始 HEIC/HEIF，浏览器用自托管 `heic-to` 解码为 JPEG。签名 URL 只在当前页面/请求内存流转，不改写签名、不上报到第三方；原生 JPEG/PNG/WebP 不变，Safari 17+ 原生 HEIC 路径不变。
+- 当前代码变更提交/CI 结果将由同轮交接更新回填。生产真实验收尚未完成；必须在 iPhone 13 / iOS 16 Safari 与 Chromium 实测后才能标记问题已解决。维护主线 `xiaobei206/beixiaoguo-CF`；部署 fork `qmancf206/beixiaoguo-CF` 需要独立确认同步与 Worker Build 状态。
+
+
+### 历史记录：0.1.19 上游图片探测 DEBUG 专版（2026-11-28)
 
 - **生产真实证据：** 0.1.18 的封面 GET 返回 503 `IMAGE_TRANSFORM_UNAVAILABLE`，`X-BXG-Transform-Error-Code: 9516`，`X-BXG-Image-Cache: MISS`，`X-BXG-Image-Transform: unavailable`；trace `d8b61985-9bb0-4869-aed5-df8e2cac841b` 显示 Cloudflare 转换 HTTP 422，并明确为 HEIC 解码失败。
 - **新版本代码：** 维护仓库提交 `31bf7de998402c1bede170e8aff0f55e8274b468`，版本 0.1.19；CI Run [#46127619086](https://github.com/xiaobei206/beixiaoguo-CF/actions/runs/46127619086) 已通过（Linux build-and-smoke、Windows npm test 均成功）。部署 fork 仍为 0.1.18 的 `cc94107d0cd0fcd4805234804775f6e3859ff665`；0.1.19 尚未部署。
@@ -8,7 +19,7 @@
 - **安全和判读：** 只允许 HTTPS `*.fqnovelpic.com`，手动跟随最多 2 次且重定向仍须在此域；最多 3 路并发、每项 5 秒、每会话 30 秒限一次；成功图片只读响应头后取消 body，错误文本限 512 字节；结果不会回显完整 URL、签名或 expiry。修改过 URL 的变体可能因签名校验返回 403，不能当作该格式不受支持。
 - **接下来：** 等 CI Run #181 完成。通过后才同步部署 fork；验证生产健康接口为 0.1.19，点击“上游探测”并把结果报告带回。先以真实结果判断是否可直出 WebP/AVIF/JPEG，再决定后续是否改正式图片请求。当前不能说封面已经恢复。
 
-## 当前排障交接（2026-11-28；新对话请先读）
+## 历史排障交接：0.1.19 上游探测部署前状态
 
 > **当前主线：0.1.19 上游图片探测诊断版已提交维护仓库且 CI 已通过，但尚未同步部署。** 用户最新真实生产 GET 确认应用运行 0.1.18，图片代理返回 503 `IMAGE_TRANSFORM_UNAVAILABLE`；诊断头 `X-BXG-Transform-Error-Code: 9516`，边缘 trace `d8b61985-9bb0-4869-aed5-df8e2cac841b` 的事件说明 Cloudflare 图片转换 HTTP 422，错误正文明确为 HEIC 解码失败。此问题未解决；0.1.19 不改正式图片代理，只添加独立探测工具。
 
@@ -76,7 +87,7 @@ npm.cmd test
 
 维护仓库 main 的 Windows 与 Linux CI 均已通过。VPS 本地快进到维护仓库 main 后，重新执行一次 `npm.cmd test`，确认用户机器也通过。不要升级 npm（10.9.9 足够）、重装 Node/Go/Git、重新克隆或把整份长日志复制出来；若失败，只需提供最后一个真实错误及其前后约 30 行。
 
-### 5. 当前未解决：等待 0.1.19 上游探测结果
+### 5. 历史待办：该项已由 0.1.19 上游探测报告更新
 
 用户已提供最新 0.1.18 生产失败 GET；错误码 9516 与 HEIC 解码失败已经确认。0.1.19 是独立诊断工具版，CI 已通过但仍未同步部署，不能把 Mock 测试结果当成实际源站验证。
 
@@ -174,4 +185,4 @@ npm.cmd test
 
 ## 新对话无缝接手指令（2026-11-28）
 
-新 GPT 接手时，先读根目录 `AGENTS.md` 与本文件，核对两个仓库 SHA 和 CI。0.1.19 是上游探测诊断版，尚未同步生产；先确认 Run #181 通过，再同步部署 fork 并在生产主页运行“上游探测”。依据真实报告判断源站格式协商/模板行为后再改正式封面链路。每次代码、测试、配置或版本修订后必须在同一轮更新 `HANDOFF-CN.md` 与 `DEVELOPMENT-LOG-CN.md`。
+新 GPT 接手时，先读根目录 `AGENTS.md`、本文件和开发日志顶部。最新已知源站报告确认原签名 URL 无论 Accept 都返回 HEIC，路径变体报 403，旧式查询参数未改变输出；不要重新重复 12 组探测。当前下一步是检查并完成 0.1.20 客户端 HEIC 本地解码回退的测试与 CI。更新部署 fork 前须重新确认其 main SHA 并 fast-forward；维护仓库 main、部署 fork main 与 Worker 实际运行版本必须分别记录。部署后在 iPhone 13 / iOS 16 Safari 和 Chromium 测首页封面、详情封面和普通 JPEG/PNG/WebP。每次代码、测试、配置或版本修订后必须在同一轮更新 `HANDOFF-CN.md` 与 `DEVELOPMENT-LOG-CN.md`；CI 或真实浏览器尚未验证时必须明确标记，不能宣称问题已修复。

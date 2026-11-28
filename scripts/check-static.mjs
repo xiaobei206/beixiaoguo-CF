@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 const required = [
   "public/index.html", "public/assets/app.js", "public/assets/app.css",
   "public/assets/icon-192.png", "public/assets/icon-512.png",
-  "public/manifest.webmanifest", "public/_routes.json", "functions/api/v1/[[path]].js", "functions/image-proxy-options.js", "functions/image-probe.js", "functions/openhongguo-runtime.js", "scripts/patch-openhongguo.mjs", "scripts/build-openhongguo.mjs", "wrangler.jsonc", "wrangler.worker.jsonc", "worker.js", "scripts/smoke-worker-runtime.mjs", "scripts/test-media-session.mjs", "scripts/test-image-proxy.mjs", "scripts/test-image-probe.mjs", "scripts/test-route-ip.mjs", "functions/route-ip.js", "functions/cenc-runtime.js", "functions/media-session.js", "edge-cenc/go.mod", "edge-cenc/cenc/layout.go", "edge-cenc/cenc/layout_test.go", "edge-cenc/wasm/main.go", "docs/deploy-cloudflare-cn.md", "VERSION"
+  "public/manifest.webmanifest", "public/_routes.json", "functions/api/v1/[[path]].js", "functions/image-proxy-options.js", "functions/image-probe.js", "functions/openhongguo-runtime.js", "scripts/patch-openhongguo.mjs", "scripts/build-openhongguo.mjs", "scripts/copy-heic-to.mjs", "scripts/test-image-client-fallback.mjs", "public/assets/vendor/heic-to.js", "public/assets/vendor/heic-to-LICENSE.txt", "wrangler.jsonc", "wrangler.worker.jsonc", "worker.js", "scripts/smoke-worker-runtime.mjs", "scripts/test-media-session.mjs", "scripts/test-image-proxy.mjs", "scripts/test-image-probe.mjs", "scripts/test-route-ip.mjs", "functions/route-ip.js", "functions/cenc-runtime.js", "functions/media-session.js", "edge-cenc/go.mod", "edge-cenc/cenc/layout.go", "edge-cenc/cenc/layout_test.go", "edge-cenc/wasm/main.go", "docs/deploy-cloudflare-cn.md", "VERSION"
 ];
 for (const file of required) await access(file);
 
@@ -52,6 +52,9 @@ const sdkBuildInfo = await readFile("node_modules/openhongguo/bxg-build-info.js"
 const wrangler = JSON.parse(await readFile("wrangler.jsonc", "utf8"));
 const workerWrangler = JSON.parse(await readFile("wrangler.worker.jsonc", "utf8"));
 if (packageInfo.version !== version) throw new Error("package.json version does not match VERSION");
+if (packageInfo.devDependencies?.["heic-to"] !== "1.6.7") throw new Error("The client-side HEIC decoder must remain pinned to heic-to 1.6.7.");
+if (!js.includes("clientHeicFallbackMode") || !js.includes("window.HeicTo") || !js.includes('type:"image/jpeg"')) throw new Error("Client-side HEIC conversion fallback is missing.");
+if (!worker.includes('url.searchParams.get("mode") === "source"') || !worker.includes("IMAGE_SOURCE_MODE_METHOD_NOT_ALLOWED") || !worker.includes("IMAGE_SOURCE_MODE_INVALID")) throw new Error("The opt-in source-only mode must be GET-only and HEIC/HEIF-only.");
 if (packageInfo.dependencies?.openhongguo) throw new Error("Do not install the stale npm openhongguo WASM package; build xiaobei206/openhongguo directly.");
 if (!sdkBuildScript.includes("xiaobei206/openhongguo.git") || !sdkBuildScript.includes("GO_SHA256") || !sdkBuildScript.includes('["test", "./..."]')) throw new Error("Build must fetch, verify and test the self-owned openhongguo source.");
 if (!sdkBuildInfo.includes('"repository":"xiaobei206/openhongguo"') || !sdkBuildInfo.includes('"playbackFallback":"video_tab"') || !sdkBuildInfo.includes('"deviceHeartbeat":true') || !sdkBuildInfo.includes('"cencRangeDecrypt":true')) throw new Error("Packaged WASM was not built from the self-owned playback SDK.");
@@ -101,7 +104,7 @@ if (!js.includes('parsed.protocol !== "https:"')) throw new Error("External cove
 if (js.includes("视频仍由 N1 按需读取与解密") || js.includes("N1 正在按需解密") || js.includes("明文 MP4")) throw new Error("Cloudflare playback UI contains stale N1-only wording");
 if (!js.includes("无需创建 KV")) throw new Error("Cloudflare runtime guide should state that KV is not required");
 
-for (const file of ["scripts/build-openhongguo.mjs", "public/assets/app.js", "functions/api/v1/[[path]].js", "functions/image-proxy-options.js", "functions/image-probe.js", "functions/openhongguo-runtime.js", "scripts/patch-openhongguo.mjs", "scripts/smoke-sdk.mjs", "scripts/smoke-pages-runtime.mjs", "worker.js", "scripts/smoke-worker-runtime.mjs", "functions/cenc-runtime.js", "functions/media-session.js", "scripts/test-media-session.mjs", "scripts/test-image-proxy.mjs", "scripts/test-image-probe.mjs"]) {
+for (const file of ["scripts/build-openhongguo.mjs", "public/assets/app.js", "functions/api/v1/[[path]].js", "functions/image-proxy-options.js", "functions/image-probe.js", "functions/openhongguo-runtime.js", "scripts/patch-openhongguo.mjs", "scripts/smoke-sdk.mjs", "scripts/smoke-pages-runtime.mjs", "worker.js", "scripts/smoke-worker-runtime.mjs", "functions/cenc-runtime.js", "functions/media-session.js", "scripts/test-media-session.mjs", "scripts/test-image-proxy.mjs", "scripts/test-image-probe.mjs", "scripts/test-image-client-fallback.mjs", "scripts/copy-heic-to.mjs"]) {
   const result = spawnSync(process.execPath, ["--check", file], { encoding: "utf8" });
   if (result.status !== 0) throw new Error("Syntax check failed: " + file + "\n" + result.stderr);
 }

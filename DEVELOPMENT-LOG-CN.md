@@ -1,3 +1,17 @@
+## 0.1.20 — 2026-11-28：浏览器本地 HEIC 解码回退
+
+### 根据 0.1.19 真实探测报告更改方案
+- 用户报告证实：同一签名 URL 的全部 Accept-only GET 返回 HTTP 200 `image/heic`；改路径后缀得到 403；追加 `x-tos-process` / `x-oss-process` 参数仍返回 HEIC。请求头协商或随意改 URL 都不能解决当前签名模板输出问题。
+- 保留现有 Cloudflare WebP 转换作为首选快路径；新增仅用于明确 `mode=source` 的受限源图 GET 分支。它只允许 HTTPS `*.fqnovelpic.com` 的 HEIC/HEIF GET，不能接收 HEAD/其他格式，不使用 `cf.image`，仍受原有重定向和 10 MiB 图片大小限制。
+- 前端第一次遇到不支持 HEIC 的浏览器封面转换失败后，按需下载自托管 `heic-to@1.6.7` IIFE 解码器，把原始 HEIC 转成 JPEG Blob URL；解码器不从第三方 CDN 加载，签名 URL不进入日志/DEBUG/本地存储，不发送给第三方；同时最多运行 2 个封面转换。后续 HEIC 图片改走 source-only，以避免重复触发已证实失败的 Cloudflare HEIC 解码。
+- `scripts/copy-heic-to.mjs` 在 build/test 前复制 vendor IIFE 和 LGPL-3.0 许可证到静态输出；生成文件被 gitignore，避免提交打包产物。新增客户端回退静态测试，并扩展生产代理函数测试验证 source-only 不调用 `cf.image`。
+- 普通 JPEG/PNG/WebP 处理不变；Safari 17+ 原生 HEIC 路径不变。该方案需真实测试 iOS 16 Safari、Chromium、详情/主页图片和普通格式后才能视作已验收。
+
+### 测试、提交与部署边界
+- 本次代码包含受限源图模式、客户端解码器懒加载/并发限制、代理回归测试、版本同步及交接文档。提交 SHA、CI Run 链接待本轮提交与 CI 完成后回填。
+- `heic-to` 项目标明 LGPL-3.0；构建步骤随发布复制对应许可证。浏览器用法按上游公开 README 实现。
+- 目前真实生产验收未完成；代码/CI 通过不代表 iPhone 13 iOS 16 Safari 和实际 Cloudflare Worker 已恢复。部署 fork 的更新与 Worker Build 必须另外确认。
+
 ## 0.1.19 — 2026-11-28：上游图片格式探测 DEBUG 专版
 
 ### 目的与实现
